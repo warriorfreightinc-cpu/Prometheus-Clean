@@ -3,6 +3,7 @@ import { AgentCommandService } from "./agent-command.service";
 describe("AgentCommandService", () => {
   const brokerPostModel: any = { find: jest.fn() };
   const carrierPostModel: any = { find: jest.fn() };
+  const companyModel: any = { findById: jest.fn() };
 
   const chainFind = (model: any, results: any[]) => {
     const lean = jest.fn().mockResolvedValue(results);
@@ -13,10 +14,13 @@ describe("AgentCommandService", () => {
   };
 
   const createService = () =>
-    new AgentCommandService(brokerPostModel, carrierPostModel);
+    new AgentCommandService(brokerPostModel, carrierPostModel, companyModel);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    companyModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
   });
 
   it("searches broker loads when the current user is a carrier", async () => {
@@ -93,6 +97,34 @@ describe("AgentCommandService", () => {
     expect(result.handled).toBe(true);
     expect(result.metadata?.mapRequested).toBe(true);
     expect(result.message).toContain("map");
+  });
+
+  it("uses company type for owner/admin users", async () => {
+    companyModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ type: "carrier" }),
+    });
+    chainFind(brokerPostModel, []);
+
+    const result = await createService().handlePrompt(
+      "anything out of Memphis from the last 5 hours",
+      { _id: "owner-user-1", companyId: "carrier-company-1", role: "admin" }
+    );
+
+    expect(companyModel.findById).toHaveBeenCalledWith("carrier-company-1");
+    expect(brokerPostModel.find).toHaveBeenCalled();
+    expect(result.handled).toBe(true);
+  });
+
+  it("returns guidance when admin company type cannot be resolved", async () => {
+    const result = await createService().handlePrompt(
+      "anything out of Memphis from the last 5 hours",
+      { _id: "owner-user-1", companyId: "company-1", role: "admin" }
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.message).toContain("broker or carrier workspace");
+    expect(brokerPostModel.find).not.toHaveBeenCalled();
+    expect(carrierPostModel.find).not.toHaveBeenCalled();
   });
 
   it("does not handle existing booking commands", async () => {

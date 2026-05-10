@@ -14,7 +14,8 @@ export interface AgentCommandResult {
 export class AgentCommandService {
   constructor(
     @InjectModel("brokerPost") private readonly brokerPostModel: Model<any>,
-    @InjectModel("carrierPost") private readonly carrierPostModel: Model<any>
+    @InjectModel("carrierPost") private readonly carrierPostModel: Model<any>,
+    @InjectModel("Company") private readonly companyModel: Model<any>
   ) {}
 
   async handlePrompt(prompt: string, user: any): Promise<AgentCommandResult> {
@@ -31,7 +32,7 @@ export class AgentCommandService {
       };
     }
 
-    const target = this.targetForRole(user?.role);
+    const target = await this.targetForUser(user);
     if (!target) {
       return {
         handled: true,
@@ -57,6 +58,21 @@ export class AgentCommandService {
         mapRequested: Boolean(parsed.mapRequested),
       },
     };
+  }
+
+  private async targetForUser(user: any): Promise<{ label: "load" | "truck"; model: Model<any> } | null> {
+    const directTarget = this.targetForRole(String(user?.role ?? ""));
+    if (directTarget) {
+      return directTarget;
+    }
+
+    const companyId = String(user?.companyId ?? "").trim();
+    if (!companyId) {
+      return null;
+    }
+
+    const company = await this.companyModel.findById(companyId).lean<any>();
+    return this.targetForRole(String(company?.type ?? ""));
   }
 
   private targetForRole(role: string): { label: "load" | "truck"; model: Model<any> } | null {

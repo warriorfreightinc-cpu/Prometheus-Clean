@@ -1,5 +1,6 @@
 import { forwardRef, Module } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
+import { CompanySchema } from "src/company/schema/company.schema";
 import { AppGatewayModule } from "src/gateway/app.gateway.module";
 import { MessagesModule } from "src/messages/messages.module";
 import { PostBrokerModule } from "src/post-broker/post.module";
@@ -21,6 +22,7 @@ import { MatchingAssistantEventSchema } from "./schema/matching-assistant-event.
       { name: "matchSnapshot", schema: MatchSnapshotSchema },
       { name: "matchOpportunity", schema: MatchOpportunitySchema },
       { name: "matchingAssistantEvent", schema: MatchingAssistantEventSchema },
+      { name: "Company", schema: CompanySchema },
       { name: "brokerPost", schema: PostBrokerSchema },
       { name: "carrierPost", schema: PostCarrierSchema },
     ]),
