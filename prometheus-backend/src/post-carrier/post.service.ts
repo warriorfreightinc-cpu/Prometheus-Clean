@@ -435,19 +435,6 @@ export class PostCarrierService {
       ]
     };
 
-    if (dateWindow?.start) {
-      matchStage.startDate = {
-        ...(matchStage.startDate ?? {}),
-        $gte: dateWindow.start
-      };
-    }
-    if (dateWindow?.end) {
-      matchStage.startDate = {
-        ...(matchStage.startDate ?? {}),
-        $lte: dateWindow.end
-      };
-    }
-
     let results = await this.PostModel.aggregate(
       [{
         $addFields: {
