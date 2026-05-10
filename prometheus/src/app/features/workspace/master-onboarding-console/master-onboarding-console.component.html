@@ -1,0 +1,198 @@
+<section class="master-onboarding">
+  <header class="master-onboarding__header">
+    <div>
+      <div class="eyebrow">Master company control</div>
+      <h2>Onboarding board</h2>
+    </div>
+    <button class="secondary-button" type="button" (click)="refresh()" [disabled]="loading">
+      {{ loading ? 'Refreshing...' : 'Refresh board' }}
+    </button>
+  </header>
+
+  <div class="message-banner" *ngIf="message">{{ message }}</div>
+  <div class="message-banner error" *ngIf="error">{{ error }}</div>
+
+  <nav class="master-onboarding__tabs">
+    <button
+      type="button"
+      *ngFor="let tab of tabs"
+      [class.active]="activeTab === tab.id"
+      (click)="selectTab(tab.id)"
+    >
+      <span>{{ tab.metric }}</span>
+      <strong>{{ tab.label }}</strong>
+      <em>{{ countFor(tab.id) }}</em>
+    </button>
+  </nav>
+
+  <div class="master-onboarding__grid">
+    <aside class="company-queue">
+      <div class="company-queue__summary">
+        <strong>{{ activeCompanies.length }}</strong>
+        <span>
+          {{
+            activeTab === 'inactive'
+              ? 'repair/delete records'
+              : activeTab === 'blocked'
+                ? 'blocked signup records'
+                : 'companies in this step'
+          }}
+        </span>
+      </div>
+
+      <button
+        class="company-queue__item"
+        type="button"
+        *ngFor="let company of activeCompanies"
+        [class.active]="company._id === selectedCompany?._id"
+        (click)="selectCompany(company)"
+      >
+        <strong>{{ company.name }}</strong>
+        <span>{{ companyMeta(company) }}</span>
+        <em>{{ statusLabel(company) }} | seats {{ company.onboarding?.requestedSeats || company.requestedSeats || company.subscription?.quantity || 1 }}</em>
+      </button>
+
+      <div class="empty-state" *ngIf="!loading && !activeCompanies.length">{{ activeEmptyMessage }}</div>
+      <div class="loading-inline" *ngIf="loading">Loading onboarding companies...</div>
+    </aside>
+
+    <section class="company-detail" *ngIf="selectedCompany; else selectCompanyState">
+      <header class="company-detail__header">
+        <div>
+          <div class="eyebrow">{{ selectedCompany.clientId || 'Company request' }}</div>
+          <h3>{{ selectedCompany.name }}</h3>
+          <p>{{ contactLine(selectedCompany) }}</p>
+        </div>
+        <span class="status-chip" [ngClass]="statusClass(selectedCompany)">{{ statusLabel(selectedCompany) }}</span>
+      </header>
+
+      <section class="blocked-panel" *ngIf="isBlockedCompany()">
+        <div>
+          <div class="eyebrow">Signup block</div>
+          <h4>Authority details need master review</h4>
+          <p>
+            Prometheus stopped this request before paperwork upload because the DOT, MC, or authority status did not pass
+            the automated check. Unlocking sends the record back to draft so the applicant can continue with the saved request.
+          </p>
+        </div>
+        <ul>
+          <li *ngFor="let reason of blockedReasons()">{{ reason }}</li>
+        </ul>
+        <div class="blocked-panel__meta">
+          <span>Checked {{ formatDate(selectedCompany.onboarding?.blockedAt) }}</span>
+          <button class="secondary-button" type="button" (click)="unlockBlockedCompany()" [disabled]="actionPending">
+            Unlock signup
+          </button>
+        </div>
+      </section>
+
+      <section class="company-snapshot">
+        <article>
+          <span>Company</span>
+          <strong>{{ companyMeta(selectedCompany) }}</strong>
+        </article>
+        <article>
+          <span>Submitted</span>
+          <strong>{{ formatDate(selectedCompany.onboarding?.submittedAt || selectedCompany.createdAt) }}</strong>
+        </article>
+        <article>
+          <span>Approved</span>
+          <strong>{{ formatDate(selectedCompany.onboarding?.approvedAt) }}</strong>
+        </article>
+        <article>
+          <span>Seats</span>
+          <strong>{{ selectedCompany.subscription?.quantity || selectedCompany.onboarding?.requestedSeats || selectedCompany.requestedSeats || 1 }}</strong>
+        </article>
+      </section>
+
+      <section class="document-grid">
+        <article class="document-card" *ngFor="let type of documentTypes">
+          <header>
+            <div>
+              <strong>{{ documentLabel(type) }}</strong>
+              <span>{{ documentFileLabel(type) }}</span>
+            </div>
+            <b>{{ documentStatus(type) }}</b>
+          </header>
+
+          <div class="document-card__meta">
+            <span>{{ documentSource(type) }}</span>
+            <a *ngIf="canPreviewDocument(type)" [href]="documentPreviewUrl(type)" target="_blank" rel="noopener">Preview</a>
+          </div>
+
+          <label>
+            <span>Expiration</span>
+            <input type="date" [(ngModel)]="documentExpiration[type]" />
+          </label>
+
+          <label>
+            <span>Reviewer note</span>
+            <input type="text" [(ngModel)]="documentNotes[type]" placeholder="Matched paperwork" />
+          </label>
+
+          <label>
+            <span>Reject reason</span>
+            <input type="text" [(ngModel)]="rejectReasons[type]" placeholder="Reason if rejecting" />
+          </label>
+
+          <div class="document-card__actions">
+            <button class="secondary-button" type="button" (click)="verifyDocument(type)" [disabled]="actionPending">Verify</button>
+            <button class="ghost-button" type="button" (click)="rejectDocument(type)" [disabled]="actionPending">Reject</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="action-panel">
+        <div>
+          <label>
+            <span>Correction message</span>
+            <textarea rows="3" [(ngModel)]="correctionMessage" placeholder="Explain exactly what must be fixed"></textarea>
+          </label>
+          <button class="secondary-button" type="button" (click)="requestCorrection()" [disabled]="actionPending">Request correction</button>
+        </div>
+
+        <div>
+          <label>
+            <span>Inactive reason</span>
+            <textarea rows="3" [(ngModel)]="inactiveReason" placeholder="Reason for inactive status"></textarea>
+          </label>
+          <button class="ghost-button" type="button" (click)="inactivateCompany()" [disabled]="actionPending">Move inactive</button>
+        </div>
+
+        <div>
+          <label>
+            <span>Restore status</span>
+            <select [(ngModel)]="restoreStatus">
+              <option value="draft">Draft / allow signup</option>
+              <option value="pending_review">Pending review</option>
+              <option value="approved_waiting_setup">Waiting setup</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
+          <button class="secondary-button" type="button" (click)="restoreCompany()" [disabled]="actionPending">Restore</button>
+        </div>
+
+        <div>
+          <label>
+            <span>Delete reason</span>
+            <textarea rows="3" [(ngModel)]="deleteReason" placeholder="Required before delete"></textarea>
+          </label>
+          <button class="ghost-button" type="button" (click)="softDeleteCompany()" [disabled]="actionPending">Soft delete</button>
+          <button class="danger-button" type="button" (click)="purgeCompany()" [disabled]="actionPending || selectedCompany.status !== 'deleted_pending_purge'">Delete forever</button>
+        </div>
+      </section>
+
+      <footer class="company-detail__footer">
+        <button class="primary-button" type="button" (click)="approvePaperwork()" [disabled]="actionPending || isBlockedCompany()">Approve paperwork</button>
+        <button class="secondary-button" type="button" (click)="resendSetupEmail()" [disabled]="actionPending">Resend setup email</button>
+      </footer>
+    </section>
+
+    <ng-template #selectCompanyState>
+      <section class="company-detail company-detail--empty">
+        <div class="empty-state">Select a company from the queue to review paperwork and lifecycle actions.</div>
+      </section>
+    </ng-template>
+  </div>
+</section>

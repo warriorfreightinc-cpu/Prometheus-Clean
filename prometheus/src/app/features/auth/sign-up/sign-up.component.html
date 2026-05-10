@@ -1,0 +1,270 @@
+<section class="signup-shell">
+  <div class="signup-frame">
+    <header class="signup-header">
+      <div>
+        <div class="eyebrow">Company onboarding</div>
+        <h1>New Company Request</h1>
+        <p>Create the company record, upload authority files, and prepare the first controlled access account.</p>
+      </div>
+
+      <nav class="stepper">
+        <button type="button" [class.active]="currentStep === 0">
+          <span>1</span>
+          <strong>Company profile</strong>
+        </button>
+        <button type="button" [class.active]="currentStep === 1">
+          <span>2</span>
+          <strong>Verification files</strong>
+        </button>
+        <button type="button" [class.active]="currentStep === 2">
+          <span>3</span>
+          <strong>Access account</strong>
+        </button>
+        <button type="button" [class.active]="currentStep === 3">
+          <span>4</span>
+          <strong>Review</strong>
+        </button>
+      </nav>
+    </header>
+
+    <div class="message error" *ngIf="error">
+      <strong>{{ error }}</strong>
+      <ul *ngIf="errorReasons.length">
+        <li *ngFor="let reason of errorReasons">{{ reason }}</li>
+      </ul>
+    </div>
+    <div class="message success" *ngIf="submitted">Company request submitted. The next step is paperwork review. You will receive setup/payment instructions after approval.</div>
+
+    <section class="signup-card" *ngIf="!submitted">
+      <div class="card-header">
+        <div class="eyebrow">{{ stepTitle }}</div>
+      </div>
+
+      <ng-container [ngSwitch]="currentStep">
+        <form *ngSwitchCase="0" class="section-stack" [formGroup]="companyForm" (ngSubmit)="submitCompany()">
+          <section class="section-card">
+            <div class="section-title">Company profile</div>
+            <p class="section-copy">Core company identity, authority references, and public contact details.</p>
+            <div class="form-grid form-grid--three">
+              <label class="field field--span-2">
+                <span>Company name</span>
+                <input formControlName="name" type="text" placeholder="Legal company name" />
+              </label>
+              <label class="field">
+                <span>Company DBA</span>
+                <input formControlName="dba" type="text" placeholder="Operating name" />
+              </label>
+              <label class="field">
+                <span>DOT number</span>
+                <input formControlName="dot" type="text" placeholder="USDOT number" />
+              </label>
+              <label class="field">
+                <span>MC number</span>
+                <input formControlName="mc" type="text" placeholder="MC number" />
+              </label>
+              <label class="field">
+                <span>Company type</span>
+                <select formControlName="type">
+                  <option value="carrier">Carrier</option>
+                  <option value="broker">Broker</option>
+                  <option value="both">Carrier & Broker</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Requested users</span>
+                <input formControlName="requestedSeats" type="number" min="1" placeholder="1" />
+              </label>
+              <label class="field field--span-2">
+                <span>Company email</span>
+                <input formControlName="email" type="email" placeholder="ops@company.com" />
+              </label>
+              <label class="field">
+                <span>Main company phone</span>
+                <input formControlName="phone" type="text" placeholder="Primary office number" />
+              </label>
+            </div>
+          </section>
+
+          <section class="section-card" formGroupName="address">
+            <div class="section-title">Registered address</div>
+            <p class="section-copy">Street first, then city, state, and ZIP in one faster row.</p>
+            <div class="form-grid form-grid--address">
+              <label class="field field--span-4">
+                <span>Street address</span>
+                <input formControlName="street" type="text" placeholder="Registered street address" />
+              </label>
+              <label class="field field--city">
+                <span>City</span>
+                <input formControlName="city" type="text" placeholder="City" />
+              </label>
+              <label class="field field--state">
+                <span>State</span>
+                <select formControlName="state">
+                  <option value="">Select state</option>
+                  <option *ngFor="let state of states; trackBy: trackByCode" [value]="state.code">{{ state.code }}</option>
+                </select>
+              </label>
+              <label class="field field--zip">
+                <span>ZIP</span>
+                <input formControlName="zip" type="text" placeholder="ZIP" />
+              </label>
+            </div>
+          </section>
+
+          <section class="section-card" formGroupName="contactPerson">
+            <div class="section-title">Authorized person information</div>
+            <p class="section-copy">Owner or manager contact used for approval and the first authenticator code.</p>
+            <div class="form-grid form-grid--three">
+              <label class="field">
+                <span>Owner / manager full name</span>
+                <input formControlName="fullName" type="text" placeholder="Full legal name" />
+              </label>
+              <label class="field">
+                <span>Position</span>
+                <input formControlName="role" type="text" placeholder="Owner, manager, safety lead" />
+              </label>
+              <label class="field">
+                <span>Email</span>
+                <input formControlName="email" type="email" placeholder="Direct contact email" />
+              </label>
+              <label class="field">
+                <span>Direct phone</span>
+                <input formControlName="phone" type="text" placeholder="Direct phone number" />
+              </label>
+              <label class="field">
+                <span>Verification code phone</span>
+                <input formControlName="verificationPhone" type="text" placeholder="Authenticator code phone" />
+              </label>
+            </div>
+          </section>
+
+          <div class="actions">
+            <button class="secondary-button" type="button" (click)="back()">Back</button>
+            <button class="primary-button" type="submit" [disabled]="busy">{{ busy ? 'Saving...' : 'Continue' }}</button>
+          </div>
+        </form>
+
+        <div *ngSwitchCase="1" class="section-stack">
+          <section class="section-card">
+            <div class="section-title">Verification files</div>
+            <p class="section-copy">Upload the authority files required for the initial review.</p>
+            <div class="upload-grid">
+              <label class="upload-card">
+                <span>MC authority</span>
+                <input type="file" (change)="onFileSelected($event, 'MC-Authority')" />
+                <small>{{ files['MC-Authority']?.name || 'No file selected' }}</small>
+              </label>
+              <label class="upload-card">
+                <span>HAZMAT authority</span>
+                <input type="file" (change)="onFileSelected($event, 'HAZMAT-Authority')" />
+                <small>{{ files['HAZMAT-Authority']?.name || 'Optional for broker-only companies' }}</small>
+              </label>
+              <label class="upload-card">
+                <span>Insurance certificate</span>
+                <input type="file" (change)="onFileSelected($event, 'Insurance-Certificate')" />
+                <small>{{ files['Insurance-Certificate']?.name || 'No file selected' }}</small>
+              </label>
+            </div>
+          </section>
+
+          <div class="actions">
+            <button class="secondary-button" type="button" (click)="back()">Back</button>
+            <button class="primary-button" type="button" (click)="submitFiles()" [disabled]="busy">
+              {{ busy ? 'Uploading...' : 'Continue' }}
+            </button>
+          </div>
+        </div>
+
+        <form *ngSwitchCase="2" class="section-stack" [formGroup]="accessForm" (ngSubmit)="submitAccess()">
+          <section class="section-card">
+            <div class="section-title">Access account</div>
+            <p class="section-copy">Create the first secure administrator login for the company.</p>
+            <div class="form-grid form-grid--three">
+              <label class="field">
+                <span>First name</span>
+                <input formControlName="firstName" type="text" placeholder="First name" />
+              </label>
+              <label class="field">
+                <span>Last name</span>
+                <input formControlName="lastName" type="text" placeholder="Last name" />
+              </label>
+              <label class="field">
+                <span>Phone</span>
+                <input formControlName="phone" type="text" placeholder="Direct phone" />
+              </label>
+              <label class="field">
+                <span>Email</span>
+                <input formControlName="email" type="email" placeholder="Admin email" />
+              </label>
+              <label class="field">
+                <span>Password</span>
+                <input formControlName="password" type="password" placeholder="Minimum 8 characters" />
+              </label>
+              <label class="field">
+                <span>Confirm password</span>
+                <input formControlName="confirmPassword" type="password" placeholder="Repeat password" />
+              </label>
+            </div>
+          </section>
+
+          <div class="actions">
+            <button class="secondary-button" type="button" (click)="back()">Back</button>
+            <button class="primary-button" type="submit" [disabled]="busy">{{ busy ? 'Saving...' : 'Continue' }}</button>
+          </div>
+        </form>
+
+        <div *ngSwitchCase="3" class="section-stack review">
+          <section class="section-card review-grid">
+            <div>
+              <div class="section-title">Company information</div>
+              <p>{{ companyForm.value.name }}</p>
+              <p>DOT {{ companyForm.value.dot }} · MC {{ companyForm.value.mc }}</p>
+              <p>{{ companyForm.value.type }}</p>
+              <p>Requested users {{ companyForm.value.requestedSeats || 1 }}</p>
+              <p>{{ companyForm.value.email }}</p>
+              <p>{{ companyForm.value.phone }}</p>
+              <p>{{ companyForm.value.address?.street }}, {{ companyForm.value.address?.city }}, {{ companyForm.value.address?.state }} {{ companyForm.value.address?.zip }}</p>
+            </div>
+            <div>
+              <div class="section-title">Authorized person</div>
+              <p>{{ companyForm.value.contactPerson?.fullName }}</p>
+              <p>{{ companyForm.value.contactPerson?.role }}</p>
+              <p>{{ companyForm.value.contactPerson?.phone }}</p>
+              <p>{{ companyForm.value.contactPerson?.verificationPhone }}</p>
+              <p>{{ companyForm.value.contactPerson?.email }}</p>
+            </div>
+            <div>
+              <div class="section-title">Verification files</div>
+              <p *ngFor="let fileType of ['MC-Authority', 'HAZMAT-Authority', 'Insurance-Certificate']">
+                {{ fileType }}: {{ files[fileType]?.name || 'Not attached' }}
+              </p>
+            </div>
+          </section>
+
+          <label class="checkbox">
+            <input type="checkbox" [(ngModel)]="termsAccepted" [ngModelOptions]="{ standalone: true }" />
+            <span>I accept the terms and conditions for company onboarding.</span>
+          </label>
+
+          <div class="actions">
+            <button class="ghost-button" type="button" (click)="resetDraft()">Reset</button>
+            <button class="secondary-button" type="button" (click)="back()">Back</button>
+            <button class="primary-button" type="button" (click)="submitRequest()" [disabled]="busy">
+              {{ busy ? 'Submitting...' : 'Submit company request' }}
+            </button>
+          </div>
+        </div>
+      </ng-container>
+    </section>
+
+    <section class="signup-card submitted" *ngIf="submitted">
+      <div class="section-title">Request submitted</div>
+      <p class="section-copy">
+        The Prometheus onboarding request is now in review. You will receive setup/payment instructions after approval.
+      </p>
+      <div class="actions">
+        <button class="primary-button" type="button" (click)="goToSignIn()">Go to sign in</button>
+      </div>
+    </section>
+  </div>
+</section>

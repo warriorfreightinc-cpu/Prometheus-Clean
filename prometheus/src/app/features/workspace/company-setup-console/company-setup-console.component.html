@@ -1,0 +1,205 @@
+<section class="company-setup">
+  <header class="company-setup__header">
+    <div>
+      <div class="eyebrow">Company setup</div>
+      <h2>{{ setupStatus?.company?.name || 'Approved company' }}</h2>
+      <p>{{ statusText(setupStatus?.status) }}</p>
+    </div>
+    <button class="secondary-button" type="button" (click)="loadSetup()" [disabled]="loading">
+      {{ loading ? 'Refreshing...' : 'Refresh setup' }}
+    </button>
+  </header>
+
+  <nav class="setup-path" aria-label="Company setup progress">
+    <span [class]="stepState('approved')">Approved</span>
+    <span [class]="stepState('payment')">Payment</span>
+    <span [class]="stepState('users')">Users</span>
+    <span [class]="stepState('active')">Active</span>
+  </nav>
+
+  <div class="message-banner" *ngIf="message">{{ message }}</div>
+  <div class="message-banner error" *ngIf="error">{{ error }}</div>
+
+  <section class="setup-summary" *ngIf="setupStatus">
+    <article>
+      <span>Requested seats</span>
+      <strong>{{ setupStatus.requestedSeats }}</strong>
+    </article>
+    <article>
+      <span>Paid seats</span>
+      <strong>{{ setupStatus.paidSeats || 'Not active' }}</strong>
+    </article>
+    <article>
+      <span>Users</span>
+      <strong>{{ seatLabel }}</strong>
+    </article>
+  </section>
+
+  <section class="integrations-panel" aria-labelledby="company-integrations-title">
+    <header class="integrations-panel__header">
+      <div>
+        <div class="eyebrow">Company integrations</div>
+        <h3 id="company-integrations-title">Provider connections</h3>
+      </div>
+      <button class="secondary-button" type="button" (click)="resetIntegrationForm()" [disabled]="integrationPending">
+        New provider
+      </button>
+    </header>
+
+    <form [formGroup]="integrationForm" (ngSubmit)="saveIntegration()" class="integration-form">
+      <label>
+        <span>Group</span>
+        <select formControlName="category">
+          <option value="setup">Setup providers</option>
+          <option value="tracking">Tracking providers</option>
+          <option value="eld">Carrier ELD/API</option>
+        </select>
+      </label>
+      <label>
+        <span>Provider</span>
+        <input formControlName="provider" type="text" placeholder="highway, macropoint, samsara" />
+      </label>
+      <label>
+        <span>Display label</span>
+        <input formControlName="label" type="text" placeholder="Highway" />
+      </label>
+      <label>
+        <span>Status</span>
+        <select formControlName="status">
+          <option value="not_connected">Not connected</option>
+          <option value="connected">Connected</option>
+          <option value="needs_attention">Needs attention</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </label>
+      <label>
+        <span>Setup URL / endpoint</span>
+        <input formControlName="setupUrl" type="url" placeholder="https://..." />
+      </label>
+      <label>
+        <span>Credential ref</span>
+        <input formControlName="credentialRef" type="text" placeholder="Stored credential key" />
+      </label>
+      <label class="integration-form__wide">
+        <span>Notes</span>
+        <input formControlName="notes" type="text" placeholder="Internal setup notes" />
+      </label>
+      <label class="integration-form__toggle">
+        <input formControlName="enabled" type="checkbox" />
+        <span>Enabled</span>
+      </label>
+      <div class="integration-form__actions">
+        <button class="primary-button" type="submit" [disabled]="integrationPending">
+          {{ integrationPending ? 'Saving...' : selectedIntegrationId ? 'Update provider' : 'Save provider' }}
+        </button>
+      </div>
+    </form>
+
+    <div class="integration-groups">
+      <section class="integration-group" *ngFor="let group of integrationGroups">
+        <header>
+          <div>
+            <h4>{{ group.title }}</h4>
+            <p>{{ group.description }}</p>
+          </div>
+          <span>{{ integrationsByCategory(group.category).length }}</span>
+        </header>
+
+        <div class="integration-empty" *ngIf="integrationsByCategory(group.category).length === 0">
+          No providers configured.
+        </div>
+
+        <div class="integration-row" *ngFor="let integration of integrationsByCategory(group.category)">
+          <div>
+            <strong>{{ integration.label }}</strong>
+            <span>{{ integration.provider }}</span>
+          </div>
+          <em [class]="statusClass(integration.status)">{{ statusLabel(integration.status) }}</em>
+          <span class="provider-state">{{ integration.enabled ? 'Enabled' : 'Off' }}</span>
+          <div class="integration-row__actions">
+            <button class="secondary-button" type="button" (click)="editIntegration(integration)" [disabled]="integrationPending">
+              Edit
+            </button>
+            <button class="secondary-button danger-button" type="button" (click)="disableIntegration(integration)" [disabled]="integrationPending || !integration.enabled">
+              Disable
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="setup-grid">
+    <article class="setup-card">
+      <div class="eyebrow">Payment and seats</div>
+      <h3>Choose company seats</h3>
+      <label>
+        <span>Seat count</span>
+        <input type="number" min="1" [(ngModel)]="quantity" />
+      </label>
+      <label>
+        <span>Stripe product</span>
+        <select [(ngModel)]="selectedPriceId">
+          <option value="">No product loaded</option>
+          <option *ngFor="let product of products" [value]="product.default_price?.id || ''">
+            {{ product.name }}
+          </option>
+        </select>
+      </label>
+      <p class="payment-plan">{{ selectedProductLabel }}</p>
+      <div class="setup-actions">
+        <button class="primary-button" type="button" (click)="startPayment()" [disabled]="actionPending || isActive">
+          Start payment
+        </button>
+        <button class="secondary-button" type="button" (click)="manageBilling()" [disabled]="actionPending || !canManageBilling">
+          Manage billing
+        </button>
+        <button class="secondary-button" type="button" (click)="activateLocally()" [disabled]="actionPending || isActive || !setupStatus?.canLocalActivate">
+          Activate locally
+        </button>
+      </div>
+    </article>
+
+    <article class="setup-card setup-card--users">
+      <div class="eyebrow">Company users</div>
+      <h3>Create access</h3>
+      <form [formGroup]="userForm" (ngSubmit)="createUser()" class="user-form">
+        <label>
+          <span>First name</span>
+          <input formControlName="firstName" type="text" />
+        </label>
+        <label>
+          <span>Last name</span>
+          <input formControlName="lastName" type="text" />
+        </label>
+        <label>
+          <span>Email</span>
+          <input formControlName="email" type="email" />
+        </label>
+        <label>
+          <span>Phone</span>
+          <input formControlName="phone" type="text" />
+        </label>
+        <label>
+          <span>Role</span>
+          <select formControlName="role">
+            <option value="broker">Broker</option>
+            <option value="carrier">Carrier</option>
+            <option value="manager">Manager</option>
+          </select>
+        </label>
+        <button class="primary-button" type="submit" [disabled]="userPending || !canCreateUsers">
+          {{ userPending ? 'Creating...' : 'Create user' }}
+        </button>
+      </form>
+    </article>
+  </section>
+
+  <section class="user-list">
+    <article *ngFor="let user of users">
+      <strong>{{ user.firstName }} {{ user.lastName }}</strong>
+      <span>{{ user.role }} | {{ user.email }}</span>
+      <em>{{ user.isActive === false ? 'Inactive' : 'Active' }}</em>
+    </article>
+  </section>
+</section>

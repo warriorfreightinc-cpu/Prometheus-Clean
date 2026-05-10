@@ -1,0 +1,905 @@
+<section class="workspace-shell" *ngIf="!loading; else loadingState">
+  <header class="workspace-header">
+    <div>
+      <div class="eyebrow">Prometheus operations desk</div>
+      <h1>Prometheus workspace</h1>
+    </div>
+
+    <div class="workspace-actions">
+      <div class="user-badge" *ngIf="user">
+        <strong>{{ user.firstName }} {{ user.lastName }}</strong>
+        <span>{{ user.role }} desk</span>
+      </div>
+      <button class="secondary-button" type="button" (click)="refreshWorkspace()">Refresh</button>
+      <button class="secondary-button" type="button" (click)="signOut()">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="workspace-tabs">
+    <button
+      type="button"
+      *ngFor="let tab of workspaceTabs"
+      [class.active]="activeTab === tab.id"
+      (click)="selectTab(tab.id)"
+    >
+      <strong>{{ tab.title }}</strong>
+    </button>
+  </nav>
+
+  <div class="workspace-grid">
+    <main class="workspace-main">
+      <div class="message-banner error" *ngIf="workspaceError">{{ workspaceError }}</div>
+
+      <section class="panel" *ngIf="activeTab === 'masterOnboarding'">
+        <app-master-onboarding-console></app-master-onboarding-console>
+      </section>
+
+      <section class="panel" *ngIf="activeTab === 'companySetup'">
+        <app-company-setup-console (statusChanged)="handleCompanySetupStatus($event)"></app-company-setup-console>
+      </section>
+
+      <section class="panel panel--dispatch" *ngIf="activeTab === 'dispatch'">
+        <section class="chat-surface chat-surface--dispatch">
+          <div #dispatchThreadRef class="chat-thread chat-thread--dispatch">
+            <article
+              class="chat-bubble"
+              *ngFor="let bubble of dispatchConsoleMessages; trackBy: trackByConsoleBubble"
+              [class.chat-bubble--user]="bubble.sender === 'user'"
+            >
+              <div class="chat-bubble__meta">
+                <strong>{{ bubble.label }}</strong>
+                <span>{{ bubble.sender === 'assistant' ? 'posting flow' : 'dispatch note' }}</span>
+              </div>
+              <p>{{ bubble.text }}</p>
+            </article>
+          </div>
+
+          <div class="message-banner error" *ngIf="dispatchError">{{ dispatchError }}</div>
+          <div class="message-banner" *ngIf="dispatchMessage">{{ dispatchMessage }}</div>
+
+          <div class="dispatch-composer">
+            <textarea
+              #dispatchNarrativeInput
+              [(ngModel)]="dispatchNarrative"
+              rows="1"
+              [placeholder]="dispatchPlaceholder"
+              (input)="handleDispatchNarrativeInput(dispatchNarrativeInput)"
+              (keydown)="handleDispatchNarrativeKeydown($event)"
+            ></textarea>
+            <div class="dispatch-composer__footer">
+              <span>{{ dispatchSubmitting ? 'Posting...' : 'Press Enter to post | Shift+Enter for new line' }}</span>
+              <div class="quick-actions quick-actions--inline">
+                <button class="primary-button primary-button--icon" type="button" (click)="submitNarrativeDispatch()" [disabled]="dispatchSubmitting">
+                  {{ dispatchSubmitting ? '...' : 'Send' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <app-ai-matching-console
+        *ngIf="activeTab === 'matching'"
+        [matchingConsoleMessages]="matchingConsoleMessages"
+        [chatbbMessages]="chatbbMessages"
+        [chatbbLoading]="chatbbLoading"
+        [chatbbError]="chatbbError"
+        [chatbbPrompt]="chatbbPrompt"
+        [dispatchRoleLabel]="dispatchRoleLabel"
+        (chatbbPromptChange)="chatbbPrompt = $event"
+        (submitConsole)="submitMatchingConsole()"
+      ></app-ai-matching-console>
+
+      <section class="panel" *ngIf="activeTab === 'loads'">
+        <div class="loads-console-topbar">
+          <button type="button" class="load-library-tab" [class.active]="loadConsoleView === 'library'" (click)="selectLoadConsoleView('library')">
+            <span>Library</span>
+            <strong>{{ loadLibraryCount }}</strong>
+          </button>
+
+          <button type="button" class="load-library-tab" [class.active]="loadConsoleView === 'readyToBill'" (click)="selectLoadConsoleView('readyToBill')">
+            <span>Ready to bill</span>
+            <strong>{{ readyToBillLoads.length }}</strong>
+          </button>
+
+          <button type="button" class="load-library-tab" [class.active]="loadConsoleView === 'archived'" (click)="selectLoadConsoleView('archived')">
+            <span>Finished</span>
+            <strong>{{ archivedLoads.length }}</strong>
+          </button>
+        </div>
+
+        <div class="message-banner" *ngIf="loadMessage">{{ loadMessage }}</div>
+        <div class="message-banner error" *ngIf="loadError">{{ loadError }}</div>
+
+        <ng-container [ngSwitch]="loadConsoleView">
+        <section class="load-library-panel load-library-panel--focused" *ngSwitchCase="'library'">
+          <section class="loads-ops-column loads-ops-column--full">
+            <div class="loads-ops-column__header">
+              <span>Library</span>
+              <strong>Delivered, waiting on BOL {{ libraryLoads.length }}</strong>
+            </div>
+
+            <div class="load-line-list" *ngIf="libraryLoads.length; else libraryLoadsEmpty">
+              <article class="load-line-card" *ngFor="let item of libraryLoads" [class.active]="item.ownPostId === selectedPostId">
+                <div class="load-line-card__route">
+                  <div>
+                    <span>Pickup city</span>
+                    <strong>{{ item.origin }}</strong>
+                  </div>
+                  <em>-></em>
+                  <div>
+                    <span>Delivery city</span>
+                    <strong>{{ item.destination }}</strong>
+                  </div>
+                  <b class="load-status-pill load-status-pill--warning">Library</b>
+                </div>
+
+                <div class="load-line-card__meta">
+                  <span><em>Broker</em>{{ item.brokerName }}</span>
+                  <span><em>Driver</em>{{ item.driverName }}</span>
+                  <span><em>Load #</em>{{ item.reference }}</span>
+                  <span><em>Truck</em>{{ item.truckLabel }}</span>
+                  <span><em>Value</em>{{ item.rateLabel }}</span>
+                </div>
+
+                <div class="load-line-card__footer">
+                  <p>{{ item.summary }}</p>
+                  <div class="load-line-card__actions">
+                    <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
+                    <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
+                    <button type="button" class="ghost-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'active')">Restore active</button>
+                    <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'readyToBill')">Ready to bill</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <section class="load-library-panel load-library-panel--focused" *ngSwitchCase="'readyToBill'">
+          <section class="loads-ops-column loads-ops-column--full">
+            <div class="loads-ops-column__header">
+              <span>Ready to bill</span>
+              <strong>BOL attached {{ readyToBillLoads.length }}</strong>
+            </div>
+
+            <div class="load-line-list" *ngIf="readyToBillLoads.length; else readyToBillLoadsEmpty">
+              <article class="load-line-card" *ngFor="let item of readyToBillLoads" [class.active]="item.ownPostId === selectedPostId">
+                <div class="load-line-card__route">
+                  <div>
+                    <span>Pickup city</span>
+                    <strong>{{ item.origin }}</strong>
+                  </div>
+                  <em>-></em>
+                  <div>
+                    <span>Delivery city</span>
+                    <strong>{{ item.destination }}</strong>
+                  </div>
+                  <b class="load-status-pill load-status-pill--billing">Ready to bill</b>
+                </div>
+
+                <div class="load-line-card__meta">
+                  <span><em>Broker</em>{{ item.brokerName }}</span>
+                  <span><em>Driver</em>{{ item.driverName }}</span>
+                  <span><em>Load #</em>{{ item.reference }}</span>
+                  <span><em>Truck</em>{{ item.truckLabel }}</span>
+                  <span><em>Value</em>{{ item.rateLabel }}</span>
+                </div>
+
+                <div class="load-line-card__footer">
+                  <p>{{ item.summary }}</p>
+                  <div class="load-line-card__actions">
+                    <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
+                    <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
+                    <button type="button" class="ghost-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'library')">Back to library</button>
+                    <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="finishReadyToBillLoad(item)">Finish</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <section class="load-library-panel load-library-panel--focused" *ngSwitchCase="'archived'">
+          <section class="loads-ops-column loads-ops-column--full">
+            <div class="loads-ops-column__header">
+              <span>Finished</span>
+              <strong>Completed loads {{ archivedLoads.length }}</strong>
+            </div>
+
+            <div class="load-line-list" *ngIf="archivedLoads.length; else archivedLoadsEmpty">
+              <article class="load-line-card" *ngFor="let item of archivedLoads" [class.active]="item.ownPostId === selectedPostId">
+                <div class="load-line-card__route">
+                  <div>
+                    <span>Pickup city</span>
+                    <strong>{{ item.origin }}</strong>
+                  </div>
+                  <em>-></em>
+                  <div>
+                    <span>Delivery city</span>
+                    <strong>{{ item.destination }}</strong>
+                  </div>
+                  <b class="load-status-pill load-status-pill--muted">Finished</b>
+                </div>
+
+                <div class="load-line-card__meta">
+                  <span><em>Broker</em>{{ item.brokerName }}</span>
+                  <span><em>Driver</em>{{ item.driverName }}</span>
+                  <span><em>Load #</em>{{ item.reference }}</span>
+                  <span><em>Truck</em>{{ item.truckLabel }}</span>
+                  <span><em>Value</em>{{ item.rateLabel }}</span>
+                </div>
+
+                <div class="load-line-card__footer">
+                  <p>{{ item.summary }}</p>
+                  <div class="load-line-card__actions">
+                    <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
+                    <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
+                    <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'readyToBill')">Back to ready to bill</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <div class="loads-operations-board" *ngSwitchDefault>
+          <section class="loads-ops-column">
+            <div class="loads-ops-column__header">
+              <span>My loads</span>
+              <strong>Active now {{ myActiveLoads.length }}</strong>
+            </div>
+
+            <div class="load-line-list" *ngIf="myActiveLoads.length; else myLoadsEmpty">
+              <article class="load-line-card" *ngFor="let item of myActiveLoads" [class.active]="item.ownPostId === selectedPostId">
+                <div class="load-line-card__route">
+                  <div>
+                    <span>Pickup city</span>
+                    <strong>{{ item.origin }}</strong>
+                  </div>
+                  <em>-></em>
+                  <div>
+                    <span>Delivery city</span>
+                    <strong>{{ item.destination }}</strong>
+                  </div>
+                  <b class="load-status-pill load-status-pill--active">Active</b>
+                </div>
+
+                <div class="load-line-card__meta">
+                  <span><em>Broker</em>{{ item.brokerName }}</span>
+                  <span><em>Driver</em>{{ item.driverName }}</span>
+                  <span><em>Load #</em>{{ item.reference }}</span>
+                  <span><em>Truck</em>{{ item.truckLabel }}</span>
+                  <span><em>Value</em>{{ item.rateLabel }}</span>
+                </div>
+
+                <div class="load-line-card__footer">
+                  <p>{{ item.summary }}</p>
+                  <div class="load-line-card__actions">
+                    <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
+                    <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
+                    <button type="button" class="ghost-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'library')">Delivered</button>
+                    <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'readyToBill')">Ready to bill</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="loads-ops-column loads-ops-column--team">
+            <div class="loads-ops-column__header">
+              <span>Company loads</span>
+              <strong>Visible across the company {{ teamActiveLoads.length }}</strong>
+            </div>
+
+            <div class="load-line-list" *ngIf="teamActiveLoads.length; else teamLoadsEmpty">
+              <article class="load-line-card load-line-card--team" *ngFor="let item of teamActiveLoads" [class.active]="item.ownPostId === selectedPostId">
+                <div class="company-load-owner">
+                  <span>Dispatcher</span>
+                  <strong>{{ item.dispatcherName }}</strong>
+                </div>
+
+                <div class="load-line-card__route">
+                  <div>
+                    <span>Pickup city</span>
+                    <strong>{{ item.origin }}</strong>
+                  </div>
+                  <em>-></em>
+                  <div>
+                    <span>Delivery city</span>
+                    <strong>{{ item.destination }}</strong>
+                  </div>
+                  <b class="load-status-pill load-status-pill--active">Active</b>
+                </div>
+
+                <div class="load-line-card__meta">
+                  <span><em>Broker</em>{{ item.brokerName }}</span>
+                  <span><em>Driver</em>{{ item.driverName }}</span>
+                  <span><em>Load #</em>{{ item.reference }}</span>
+                  <span><em>Truck</em>{{ item.truckLabel }}</span>
+                  <span><em>Value</em>{{ item.rateLabel }}</span>
+                </div>
+
+                <div class="load-line-card__footer">
+                  <p>{{ item.summary }}</p>
+                  <div class="load-line-card__actions">
+                    <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
+                    <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
+                    <button type="button" class="primary-button" (click)="requestTeamLoadAccess(item)">Req access</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="access-request-card" *ngIf="accessRequestLoad">
+              <div>
+                <div class="eyebrow">Access request</div>
+                <h3>{{ accessRequestLoad.reference }}</h3>
+                <p>{{ accessRequestLoad.dispatcherName }} must provide the verification number from their Prometheus pop-up.</p>
+              </div>
+
+              <label>
+                <span>Verification number</span>
+                <input type="text" [(ngModel)]="accessVerificationCode" placeholder="Enter code" />
+              </label>
+
+              <div class="load-line-card__actions">
+                <button type="button" class="ghost-button" (click)="cancelTeamLoadAccess()">Cancel</button>
+                <button type="button" class="primary-button" (click)="verifyTeamLoadAccess()">Verify access</button>
+              </div>
+            </div>
+          </section>
+        </div>
+        </ng-container>
+
+        <ng-template #myLoadsEmpty>
+          <article class="load-empty-card">
+            <div class="eyebrow">My loads</div>
+            <h3>No active loads yet</h3>
+            <p>Booked freight from Direct Chat Console will appear here as active work.</p>
+          </article>
+        </ng-template>
+
+        <ng-template #teamLoadsEmpty>
+          <article class="load-empty-card">
+            <div class="eyebrow">Company loads</div>
+            <h3>No coworker active loads are visible yet</h3>
+            <p>Other dispatchers' active loads will show here with request-access controls.</p>
+          </article>
+        </ng-template>
+
+        <ng-template #libraryLoadsEmpty>
+          <article class="load-empty-card">
+            <div class="eyebrow">Library</div>
+            <h3>No delivered loads waiting on BOL</h3>
+            <p>Mark an active load Delivered when it is done but not ready for billing yet.</p>
+          </article>
+        </ng-template>
+
+        <ng-template #readyToBillLoadsEmpty>
+          <article class="load-empty-card">
+            <div class="eyebrow">Ready to bill</div>
+            <h3>No loads ready to bill yet</h3>
+            <p>Move a delivered load here once the BOL copy is attached and billing can start.</p>
+          </article>
+        </ng-template>
+
+        <ng-template #archivedLoadsEmpty>
+          <article class="load-empty-card">
+            <div class="eyebrow">Finished</div>
+            <h3>No finished loads archived yet</h3>
+            <p>Finish a ready-to-bill load after billing review and TMS export staging.</p>
+          </article>
+        </ng-template>
+      </section>
+
+      <section class="panel" *ngIf="activeTab === 'direct'">
+        <div class="panel-header panel-header--direct">
+          <div class="eyebrow">Direct chat console</div>
+          <div class="direct-console-tabs">
+            <button
+              type="button"
+              *ngFor="let view of directConsoleTabs"
+              [class.active]="activeDirectConsoleView === view.id"
+              (click)="selectDirectConsoleView(view.id)"
+            >
+              <strong>{{ view.label }}</strong>
+            </button>
+          </div>
+        </div>
+
+        <div class="console-grid console-grid--direct" [class.console-grid--direct-main]="activeDirectConsoleView !== 'booking'">
+          <aside class="console-rail console-rail--direct">
+            <ng-container [ngSwitch]="activeDirectConsoleView">
+              <section class="connections-card direct-sidebar-card direct-sidebar-card--booking" *ngSwitchCase="'booking'">
+                <div class="eyebrow">Current booking</div>
+                <div class="booking-load-card" [ngClass]="bookingRoomTone(selectedRoom?.id)">
+                  <div class="booking-load-card__header">
+                    <span class="booking-load-card__eyeline">{{ selectedRoomContactLabel }}</span>
+                    <div class="booking-load-card__lane-row">
+                      <h3>{{ selectedRoom?.lane || formatLane(selectedPost) }}</h3>
+                      <strong class="booking-load-card__rate" *ngIf="selectedRoomRateLabel">{{ selectedRoomRateLabel }}</strong>
+                    </div>
+                    <div class="booking-load-card__meta-inline">
+                      <span *ngFor="let item of selectedRoomMetaItems">{{ item }}</span>
+                    </div>
+                  </div>
+
+                  <div class="booking-status-row">
+                    <span
+                      class="booking-status-pill"
+                      [class.booking-status-pill--ready]="selectedRoomTrackingReady"
+                      [class.booking-status-pill--pending]="!selectedRoomTrackingReady"
+                    >
+                      Tracking
+                    </span>
+                  </div>
+
+                  <div class="booking-state-strip" *ngIf="selectedRoom">
+                    <span>{{ bookingStatusLabel(selectedRoom) }}</span>
+                    <strong *ngIf="selectedRoom.brokerApprovedBooking">Broker approved</strong>
+                    <strong *ngIf="selectedRoom.carrierApprovedBooking">Carrier approved</strong>
+                  </div>
+                </div>
+
+                <div class="booking-room-list" *ngIf="directBookingRooms.length">
+                  <button
+                    class="booking-room-card"
+                    type="button"
+                    *ngFor="let room of directBookingRooms; trackBy: trackByRoomId"
+                    [ngClass]="bookingRoomTone(room.id)"
+                    [class.active]="room.id === selectedRoomId"
+                    (click)="selectRoom(room.id)"
+                  >
+                    <span class="booking-room-card__eyeline">{{ room.contactName }}</span>
+                    <div class="booking-room-card__lane-row">
+                      <strong>{{ room.lane }}</strong>
+                      <em *ngIf="bookingRoomRateLabel(room)">{{ bookingRoomRateLabel(room) }}</em>
+                    </div>
+                    <div class="booking-room-card__meta">
+                      <span *ngFor="let item of bookingRoomMetaItems(room)">{{ item }}</span>
+                    </div>
+                  </button>
+                </div>
+
+                <div class="quick-actions quick-actions--booking quick-actions--booking-grid">
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomSetupReady"
+                    [class.status-button--pending]="!selectedRoomSetupReady"
+                    [disabled]="!selectedRoom"
+                    (click)="beginSetupAssist()"
+                  >
+                    Get setup
+                  </button>
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomDriverReady"
+                    [class.status-button--pending]="!selectedRoomDriverReady"
+                    [disabled]="!selectedRoom"
+                    (click)="beginDriverAssist()"
+                  >
+                    Assign driver
+                  </button>
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomContactReady"
+                    [class.status-button--pending]="!selectedRoomContactReady"
+                    [disabled]="!selectedRoom"
+                    (click)="saveCurrentBrokerContact()"
+                  >
+                    Add contact
+                  </button>
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomTrackingReady"
+                    [class.status-button--pending]="!selectedRoomTrackingReady"
+                    [disabled]="!selectedRoom"
+                    (click)="beginTrackingAssist()"
+                  >
+                    Track
+                  </button>
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomDeliveredReady"
+                    [class.status-button--pending]="!selectedRoomDeliveredReady"
+                    [disabled]="!selectedRoom"
+                    (click)="markSelectedBookingDelivered()"
+                  >
+                    Delivered
+                  </button>
+                  <button class="ghost-button status-button status-button--danger" type="button" [disabled]="!selectedRoom" (click)="beginCancellationAssist()">
+                    Cancel load
+                  </button>
+                  <button
+                    *ngIf="selectedRoomCanSendToLoadsConsole"
+                    class="primary-button status-button status-button--ready status-button--wide"
+                    type="button"
+                    (click)="sendSelectedLoadToLoadsConsole()"
+                  >
+                    Send to Loads Console
+                  </button>
+                </div>
+                <div class="message-banner error" *ngIf="loadError">{{ loadError }}</div>
+              </section>
+
+              <section class="connections-card direct-sidebar-card direct-sidebar-card--main" *ngSwitchCase="'main'">
+                <div class="eyebrow">Direct messages</div>
+
+                <label class="direct-search">
+                  <span>Search contact</span>
+                  <input
+                    type="text"
+                    [(ngModel)]="directContactSearch"
+                    placeholder="Email, name, company, or phone"
+                  />
+                </label>
+
+                <div class="direct-search-results" *ngIf="directContactSearch.trim()">
+                  <article class="direct-search-result" *ngFor="let entry of directSearchResults; trackBy: trackByBrokerDeskEntry">
+                    <div>
+                      <strong>{{ entry.contactName }}</strong>
+                      <span>{{ entry.companyName }}</span>
+                      <em>{{ entry.email || entry.phone || brokerDeskStatusLabel(entry) }}</em>
+                    </div>
+                    <button
+                      [ngClass]="entry.isSaved ? 'ghost-button' : 'primary-button'"
+                      type="button"
+                      (click)="entry.isSaved ? selectBrokerDeskEntry(entry) : saveBrokerDeskEntryContact(entry)"
+                    >
+                      {{ entry.isSaved ? 'Open chat' : 'Add to contacts' }}
+                    </button>
+                  </article>
+                  <div class="empty-state" *ngIf="!directSearchResults.length">
+                    No matching contact yet. Add a broker below.
+                  </div>
+                </div>
+
+                <div class="direct-list-controls">
+                  <button class="ghost-button" type="button" (click)="showArchivedDirectContacts = !showArchivedDirectContacts">
+                    {{ showArchivedDirectContacts ? 'Show active' : 'Show archived' }}
+                  </button>
+                </div>
+
+                <div class="direct-list direct-list--chat" *ngIf="visibleBrokerDeskEntries.length; else brokerDeskEmptyState">
+                  <button
+                    class="direct-list-item direct-list-item--chat"
+                    type="button"
+                    *ngFor="let entry of visibleBrokerDeskEntries; trackBy: trackByBrokerDeskEntry"
+                    [class.active]="selectedBrokerDeskEntry?.id === entry.id"
+                    [class.direct-list-item--pending]="entry.status === 'pending'"
+                    [class.direct-list-item--muted]="entry.muted"
+                    [class.direct-list-item--archived]="entry.archived"
+                    (click)="selectBrokerDeskEntry(entry)"
+                  >
+                    <span class="direct-list-item__avatar">{{ brokerDeskInitials(entry) }}</span>
+                    <div class="direct-list-item__body">
+                      <div class="direct-list-item__row">
+                        <strong>{{ entry.contactName }}</strong>
+                        <b class="badge badge--chat" *ngIf="entry.unread">{{ entry.unread }}</b>
+                      </div>
+                      <span>{{ entry.companyName }}</span>
+                      <em>{{ entry.note }}</em>
+                    </div>
+                    <div class="direct-list-item__status">
+                      <span class="direct-list-item__pill" [class.direct-list-item__pill--pending]="entry.status === 'pending'">{{ brokerDeskStatusLabel(entry) }}</span>
+                    </div>
+                  </button>
+                </div>
+
+                <ng-template #brokerDeskEmptyState>
+                  <div class="empty-state">
+                    Search and add brokers here, or save them from Booking Chat.
+                  </div>
+                </ng-template>
+
+                <button class="primary-button" type="button" (click)="toggleBrokerInviteForm()">
+                  {{ brokerInviteOpen ? 'Close broker form' : 'Add broker' }}
+                </button>
+
+                <form class="invite-form" *ngIf="brokerInviteOpen" (ngSubmit)="saveBrokerInvite()">
+                  <label>
+                    <span>Broker name</span>
+                    <input type="text" [(ngModel)]="brokerInviteForm.contactName" name="brokerContactName" placeholder="Brooke Broker" />
+                  </label>
+                  <label>
+                    <span>Company name</span>
+                    <input type="text" [(ngModel)]="brokerInviteForm.companyName" name="brokerCompanyName" placeholder="Coyote Logistics" />
+                  </label>
+                  <label>
+                    <span>Email</span>
+                    <input type="email" [(ngModel)]="brokerInviteForm.email" name="brokerEmail" placeholder="broker@company.com" />
+                  </label>
+                  <label>
+                    <span>Phone</span>
+                    <input type="text" [(ngModel)]="brokerInviteForm.phone" name="brokerPhone" placeholder="Optional phone" />
+                  </label>
+                  <div class="quick-actions quick-actions--compact">
+                    <button class="ghost-button" type="button" (click)="toggleBrokerInviteForm()">Cancel</button>
+                    <button class="primary-button" type="submit">Save broker</button>
+                  </div>
+                </form>
+
+                <div class="message-banner" *ngIf="loadMessage">{{ loadMessage }}</div>
+                <div class="message-banner error" *ngIf="loadError">{{ loadError }}</div>
+              </section>
+
+              <section class="connections-card direct-sidebar-card direct-sidebar-card--main" *ngSwitchCase="'company'">
+                <div class="eyebrow">Company chat</div>
+
+                <div class="direct-list direct-list--chat" *ngIf="companyThreadSummaries.length; else companyDeskEmptyState">
+                  <button
+                    class="direct-list-item direct-list-item--chat"
+                    type="button"
+                    *ngFor="let thread of companyThreadSummaries; trackBy: trackByCompanyThread"
+                    [class.active]="selectedCompanyThread?.id === thread.id"
+                    (click)="selectCompanyThread(thread.id)"
+                  >
+                    <span class="direct-list-item__avatar">{{ companyThreadInitials(thread) }}</span>
+                    <div class="direct-list-item__body">
+                      <div class="direct-list-item__row">
+                        <strong>{{ thread.name }}</strong>
+                        <b class="badge badge--chat" *ngIf="thread.unread">{{ thread.unread }}</b>
+                      </div>
+                      <span>{{ thread.roleLabel }}</span>
+                      <em>{{ thread.snapshot }}</em>
+                    </div>
+                    <div class="direct-list-item__status">
+                      <span class="direct-list-item__pill">{{ companyThreadStatusLabel(thread) }}</span>
+                    </div>
+                  </button>
+                </div>
+
+                <ng-template #companyDeskEmptyState>
+                  <div class="empty-state">
+                    Company rooms will appear here as coworkers and departments start using the desk.
+                  </div>
+                </ng-template>
+              </section>
+            </ng-container>
+          </aside>
+
+          <section class="conversation-shell">
+            <ng-container [ngSwitch]="activeDirectConsoleView">
+              <ng-container *ngSwitchCase="'booking'">
+                <div class="conversation-card conversation-card--direct conversation-card--booking">
+                  <div class="loading-inline" *ngIf="roomsLoading">Loading booking rooms...</div>
+
+                  <section class="chat-bubble booking-confirmation-window" *ngIf="bookingConfirmationWindow as confirmation">
+                    <div class="chat-bubble__meta">
+                      <strong>{{ bookingConfirmationTitle(confirmation) }}</strong>
+                      <span>Expires in {{ formatBookingConfirmationTimer() }}</span>
+                    </div>
+                    <p>
+                      {{ selectedRoom?.lane || 'Selected hazmat lane' }}
+                      <br />
+                      {{ selectedRoom?.companyName || 'Counterparty' }} ·
+                      {{ selectedRoom?.bookingRate ? ('$' + selectedRoom?.bookingRate) : 'Rate pending' }}
+                      <br />
+                      {{ bookingConfirmationBody(confirmation) }}
+                    </p>
+                    <div class="chat-action-row">
+                      <button class="primary-button" type="button" (click)="acceptBookingConfirmation()">
+                        {{ bookingConfirmationAcceptLabel(confirmation) }}
+                      </button>
+                      <button class="ghost-button status-button--danger" type="button" (click)="rejectBookingConfirmation()">
+                        {{ bookingConfirmationRejectLabel(confirmation) }}
+                      </button>
+                    </div>
+                  </section>
+
+                  <article
+                    class="chat-bubble"
+                    *ngFor="let entry of bookingAssistantEntries; trackBy: trackByBookingAssistant"
+                    [class.chat-bubble--user]="entry.mine"
+                    [class.chat-bubble--ai]="entry.source === 'ai'"
+                  >
+                    <div class="chat-bubble__meta">
+                      <strong>{{ entry.label }}</strong>
+                      <span *ngIf="formatChatTime(entry.date) as timeLabel">{{ timeLabel }}</span>
+                    </div>
+                    <p>{{ entry.text }}</p>
+                    <div class="chat-action-row" *ngIf="entry.actions?.length">
+                      <button
+                        type="button"
+                        *ngFor="let action of entry.actions"
+                        [ngClass]="bookingAssistantActionClass(action)"
+                        [disabled]="action.disabled"
+                        (click)="runBookingAssistantAction(action)"
+                      >
+                        {{ action.label }}
+                      </button>
+                    </div>
+                  </article>
+
+                  <div class="loading-inline" *ngIf="chatbbLoading">Prometheus is reviewing the current booking...</div>
+                </div>
+
+                <div class="chat-input">
+                  <input
+                    [ngModel]="chatbbPrompt"
+                    (ngModelChange)="chatbbPrompt = $event"
+                    type="text"
+                    placeholder="Ask Prometheus to guide setup, tracking, cancellation, delivery, or billing for this booking."
+                    [disabled]="chatbbLoading || !selectedRoom"
+                    (keyup.enter)="sendChatbbMessage()"
+                  />
+                  <button class="primary-button" type="button" [disabled]="chatbbLoading || !selectedRoom" (click)="sendChatbbMessage()">
+                    Send
+                  </button>
+                </div>
+
+                <div class="message-banner error" *ngIf="chatbbError">{{ chatbbError }}</div>
+              </ng-container>
+
+              <ng-container *ngSwitchCase="'company'">
+                <div class="conversation-card conversation-card--direct conversation-card--main">
+                  <div class="conversation-header" *ngIf="selectedCompanyThread">
+                    <div>
+                      <strong>{{ selectedCompanyThread.name || 'Select a coworker room' }}</strong>
+                      <span>{{ selectedCompanyThread.roleLabel || 'Internal room' }}</span>
+                    </div>
+                    <em>{{ selectedCompanyThread.snapshot || 'Coworker-only coordination' }}</em>
+                  </div>
+
+                  <article class="message" *ngFor="let entry of selectedCompanyMessages; trackBy: trackByCompanyMessage" [class.message--mine]="entry.sender === 'me'">
+                    <span>{{ entry.author }}</span>
+                    <p>{{ entry.text }}</p>
+                    <time *ngIf="formatChatTime(entry.date) as timeLabel">{{ timeLabel }}</time>
+                  </article>
+
+                  <div class="empty-state" *ngIf="selectedCompanyThread && !selectedCompanyMessages.length">
+                    This company room is open but no internal messages are stored yet.
+                  </div>
+
+                  <div class="empty-state" *ngIf="!selectedCompanyThread">
+                    Select a coworker or department on the left to open the company chat.
+                  </div>
+                </div>
+
+                <div class="composer composer--direct">
+                  <textarea
+                    [(ngModel)]="companyMessage"
+                    rows="2"
+                    placeholder="Send a company-only note about load coverage, access, or handoff"
+                    [disabled]="!selectedCompanyThread"
+                    (keydown.enter)="handleCompanyComposerKeydown($event)"
+                  ></textarea>
+                  <button class="primary-button" type="button" [disabled]="!selectedCompanyThread || !companyMessage.trim()" (click)="sendCompanyMessage()">
+                    Send
+                  </button>
+                </div>
+              </ng-container>
+
+              <ng-container *ngSwitchCase="'main'">
+                <div class="conversation-card conversation-card--direct conversation-card--main">
+                  <div class="conversation-header" *ngIf="selectedBrokerDeskEntry">
+                    <div>
+                      <strong>{{ selectedBrokerDeskEntry.contactName || 'Select a broker room' }}</strong>
+                      <span>{{ selectedBrokerDeskEntry.companyName }}</span>
+                    </div>
+                    <div class="conversation-header__actions">
+                      <em>{{ selectedBrokerDeskEntry.email || selectedBrokerDeskEntry.phone || brokerDeskStatusLabel(selectedBrokerDeskEntry) }}</em>
+                      <button class="ghost-button" type="button" (click)="muteSelectedBrokerConversation()">
+                        {{ selectedBrokerDeskEntry.muted ? 'Unmute' : 'Mute' }}
+                      </button>
+                      <button class="ghost-button" type="button" (click)="archiveSelectedBrokerConversation()">Archive</button>
+                      <button class="ghost-button ghost-button--danger" type="button" (click)="deleteSelectedBrokerConversation()">Delete</button>
+                    </div>
+                  </div>
+
+                  <article
+                    class="message"
+                    *ngFor="let entry of activeConversation; trackBy: trackByDirectMessage"
+                    [class.message--mine]="entry.role === user?.role"
+                  >
+                    <span>{{ entry.role === user?.role ? 'You' : selectedBrokerRoom?.contactName }}</span>
+                    <p *ngIf="entry.type !== 'bid'">{{ entry.text }}</p>
+                    <p *ngIf="entry.type === 'bid'">Bid moved to {{ entry.bid | currency:'USD':'symbol':'1.0-0' }}</p>
+                    <time *ngIf="formatChatTime(entry.date) as timeLabel">{{ timeLabel }}</time>
+                  </article>
+
+                  <div class="empty-state" *ngIf="selectedBrokerRoom && !activeConversation.length">
+                    This broker room is open but no direct messages are stored yet.
+                  </div>
+
+                  <div class="empty-state" *ngIf="selectedBrokerDeskEntry && !selectedBrokerRoom && selectedBrokerDeskEntry.status === 'pending'">
+                    This broker is staged in Prometheus but not approved in the system yet.
+                  </div>
+
+                  <div class="empty-state" *ngIf="!selectedBrokerDeskEntry">
+                    Select a broker on the left to open the chat.
+                  </div>
+                </div>
+
+                <div class="composer composer--direct">
+                  <textarea
+                    [(ngModel)]="directMessage"
+                    rows="2"
+                    placeholder="Send a direct note to the selected broker room"
+                    [disabled]="!selectedBrokerRoom"
+                    (keydown.enter)="handleDirectComposerKeydown($event)"
+                  ></textarea>
+                  <button class="primary-button" type="button" [disabled]="!selectedBrokerRoom || !directMessage.trim()" (click)="sendDirectMessage()">
+                    Send
+                  </button>
+                </div>
+              </ng-container>
+            </ng-container>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel route-intelligence-panel" *ngIf="showRouteIntelligencePanel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Route intelligence</p>
+            <h2>{{ routeIntelligencePanel.laneLabel || 'Selected hazmat lane' }}</h2>
+          </div>
+          <button type="button" class="ghost-button" (click)="closeRouteIntelligencePanel()">Close</button>
+        </div>
+
+        <div class="metric-grid metric-grid--loads-board">
+          <div class="message-banner">
+            <span class="eyebrow">Truck to pickup</span>
+            <strong>{{ formatRouteMiles(routeIntelligencePanel.deadheadMiles) }}</strong>
+          </div>
+          <div class="message-banner">
+            <span class="eyebrow">Loaded miles</span>
+            <strong>{{ formatRouteMiles(routeIntelligencePanel.loadedMiles) }}</strong>
+          </div>
+          <div class="message-banner">
+            <span class="eyebrow">Total trip</span>
+            <strong>{{ formatRouteMiles(routeIntelligencePanel.totalMiles) }}</strong>
+          </div>
+          <div class="message-banner">
+            <span class="eyebrow">Rate per mile</span>
+            <strong>{{ formatRouteRatePerMile(routeIntelligencePanel.suggestedRate, routeIntelligencePanel.loadedMiles) }}</strong>
+          </div>
+        </div>
+
+        <div class="metric-grid">
+          <section class="message-banner">
+            <p class="eyebrow">Lane</p>
+            <p>{{ routeIntelligencePanel.originLabel || 'Origin pending' }} -> {{ routeIntelligencePanel.destinationLabel || 'Destination pending' }}</p>
+            <p *ngIf="routeIntelligencePanel.stops.length">Stops: {{ routeIntelligencePanel.stops.join(' -> ') }}</p>
+            <p>Truck location: {{ routeIntelligencePanel.truckLocationLabel || 'Tracking not connected' }}</p>
+          </section>
+
+          <section class="message-banner">
+            <p class="eyebrow">Tracking</p>
+            <p>{{ routeTrackingLabel() }}</p>
+            <p>{{ routeIntelligencePanel.routeProvider }}</p>
+          </section>
+
+          <section class="message-banner">
+            <p class="eyebrow">Cost estimate</p>
+            <p>Posted rate: {{ formatRouteMoney(routeIntelligencePanel.postedRate) }}</p>
+            <p>Suggested rate: {{ formatRouteMoney(routeIntelligencePanel.suggestedRate) }}</p>
+            <p>Fuel: {{ formatRouteMoney(routeIntelligencePanel.fuelEstimate) }}</p>
+            <p>Tolls: {{ formatRouteMoney(routeIntelligencePanel.tollEstimate) }}</p>
+          </section>
+        </div>
+
+        <section class="message-banner">
+          <p class="eyebrow">Hazmat notes</p>
+          <ul>
+            <li *ngFor="let note of routeIntelligencePanel.hazmatNotes">{{ note }}</li>
+          </ul>
+        </section>
+      </section>
+    </main>
+
+  </div>
+</section>
+
+<ng-template #loadingState>
+  <section class="workspace-shell workspace-shell--loading">
+    <div class="loading-card">Loading Prometheus workspace...</div>
+  </section>
+</ng-template>

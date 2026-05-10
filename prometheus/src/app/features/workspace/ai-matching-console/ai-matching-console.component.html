@@ -1,0 +1,54 @@
+<section class="panel panel--matching">
+  <section class="chat-surface">
+    <div class="chat-thread">
+      <article
+        class="chat-bubble"
+        *ngFor="let bubble of matchingConsoleMessages; trackBy: trackByBubble"
+        [class.chat-bubble--user]="bubble.sender === 'user'"
+      >
+        <div class="chat-bubble__meta">
+          <strong>{{ bubble.label }}</strong>
+          <span *ngIf="bubble.createdAt; else bubbleKind">{{ formatTimestamp(bubble.createdAt) }}</span>
+          <ng-template #bubbleKind>
+            <span>{{ bubble.sender === 'user' ? 'console input' : 'console command' }}</span>
+          </ng-template>
+        </div>
+        <p>{{ bubble.text }}</p>
+      </article>
+
+      <article
+        class="chat-bubble"
+        *ngFor="let message of chatbbMessages; trackBy: trackByChatMessage"
+        [class.chat-bubble--user]="message.sender === 'user'"
+      >
+        <div class="chat-bubble__meta">
+          <strong>{{ message.sender === 'assistant' ? 'Prometheus AI' : 'You' }}</strong>
+          <span *ngIf="formatTimestamp(message.createdAt) as timeLabel">{{ timeLabel }}</span>
+        </div>
+        <p>{{ message.text }}</p>
+      </article>
+
+      <div class="empty-state" *ngIf="!matchingConsoleMessages.length && !chatbbMessages.length && !chatbbLoading">
+        Type a command like "show my posted {{ dispatchRoleLabel }}" or "show matches for this posting".
+      </div>
+
+      <div class="loading-inline" *ngIf="chatbbLoading">Prometheus is reviewing the selected lane...</div>
+    </div>
+
+    <div class="chat-input">
+      <input
+        [ngModel]="chatbbPrompt"
+        (ngModelChange)="updatePrompt($event)"
+        type="text"
+        placeholder="Type a command or ask Prometheus to summarize, rank, counter, or book a match."
+        [disabled]="chatbbLoading"
+        (keyup.enter)="submit()"
+      />
+      <button class="primary-button" type="button" [disabled]="chatbbLoading" (click)="submit()">
+        Send
+      </button>
+    </div>
+
+    <div class="message-banner error" *ngIf="chatbbError">{{ chatbbError }}</div>
+  </section>
+</section>

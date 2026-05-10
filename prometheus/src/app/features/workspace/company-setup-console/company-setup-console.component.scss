@@ -1,0 +1,363 @@
+.company-setup {
+  display: grid;
+  gap: 18px;
+}
+
+.company-setup__header,
+.setup-summary,
+.setup-grid,
+.setup-actions,
+.setup-path {
+  display: grid;
+  gap: 14px;
+}
+
+.company-setup__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+
+  h2 {
+    margin: 4px 0;
+    font-size: 34px;
+    line-height: 1.05;
+  }
+
+  p {
+    margin: 0;
+    color: var(--muted);
+  }
+}
+
+.setup-path {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+
+  span {
+    min-height: 52px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(10, 22, 36, 0.84);
+    color: var(--muted);
+    font-weight: 900;
+  }
+
+  .done {
+    border-color: rgba(102, 220, 140, 0.38);
+    color: #9af0a8;
+  }
+
+  .active {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: inset 0 -3px 0 var(--accent);
+  }
+
+  .locked {
+    opacity: 0.55;
+  }
+}
+
+.setup-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  article {
+    min-height: 92px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(10, 22, 36, 0.84);
+    display: grid;
+    align-content: center;
+    gap: 6px;
+  }
+
+  span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  strong {
+    font-size: 24px;
+  }
+}
+
+.setup-grid {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+
+.setup-card,
+.user-list article {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(10, 22, 36, 0.84);
+}
+
+.setup-card {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+
+  h3 {
+    margin: 0;
+    font-size: 26px;
+  }
+}
+
+.payment-plan {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.integrations-panel {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(10, 22, 36, 0.84);
+  display: grid;
+  gap: 16px;
+}
+
+.integrations-panel__header,
+.integration-group header,
+.integration-row,
+.integration-row__actions {
+  display: grid;
+  gap: 12px;
+}
+
+.integrations-panel__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+
+  h3 {
+    margin: 4px 0 0;
+    font-size: 24px;
+  }
+}
+
+.integration-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.integration-form__wide {
+  grid-column: span 2;
+}
+
+.integration-form__toggle {
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 18, 30, 0.92);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  input {
+    width: auto;
+    min-height: auto;
+    padding: 0;
+  }
+
+  span {
+    color: var(--text);
+    font-size: 13px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+}
+
+.integration-form__actions {
+  display: grid;
+}
+
+.integration-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.integration-group {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+
+  header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+
+    h4 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    > span {
+      min-width: 28px;
+      min-height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      font-weight: 900;
+    }
+  }
+}
+
+.integration-empty {
+  min-height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.integration-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+  > div:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+
+  strong,
+  span {
+    overflow-wrap: anywhere;
+  }
+
+  span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+}
+
+.integration-row__actions {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.status-chip,
+.provider-state {
+  justify-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.status-chip--connected {
+  background: rgba(102, 220, 140, 0.12);
+  color: #9af0a8;
+}
+
+.status-chip--needs-attention {
+  background: rgba(255, 207, 102, 0.12);
+  color: #ffd978;
+}
+
+.status-chip--disabled,
+.status-chip--not-connected {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+}
+
+.danger-button {
+  color: #ffb3b3;
+}
+
+.setup-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.user-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+
+  span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 18, 30, 0.92);
+  color: var(--text);
+}
+
+.user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-list article {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+
+  span,
+  em {
+    color: var(--muted);
+    font-style: normal;
+  }
+}
+
+@media (max-width: 1100px) {
+  .company-setup__header,
+  .setup-summary,
+  .setup-grid,
+  .setup-actions,
+  .setup-path,
+  .integrations-panel__header,
+  .integration-form,
+  .integration-form__wide,
+  .integration-groups,
+  .user-form,
+  .user-list article {
+    grid-template-columns: 1fr;
+  }
+}
