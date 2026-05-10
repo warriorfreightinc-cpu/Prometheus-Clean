@@ -36,6 +36,35 @@ export class PostCarrierService {
     private readonly timeZoneService: TimeZoneService,
   ) { }
 
+  private buildCapacitySearch(value: any): string[] {
+    const normalized = String(value ?? "both").trim().toLowerCase();
+    const values = normalized === "both" || !normalized
+      ? ["full", "partial"]
+      : [normalized];
+    const variants = values.flatMap((entry) => [
+      entry,
+      entry.toUpperCase(),
+      entry.charAt(0).toUpperCase() + entry.slice(1),
+    ]);
+    return [...new Set(variants)];
+  }
+
+  private buildEquipmentSearch(value: any): string[] {
+    const rawItems = Array.isArray(value) ? value : [value];
+    const normalized = rawItems
+      .map((item) => String(item ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    const expanded = normalized.flatMap((code) => {
+      if (code === "V" || code === "VZ") return ["V", "VZ"];
+      if (code === "R" || code === "RZ") return ["R", "RZ"];
+      if (code === "F" || code === "FZ") return ["F", "FZ"];
+      if (code === "C" || code === "CZ") return ["C", "CZ"];
+      if (code === "T" || code === "TZ") return ["T", "TZ"];
+      return [code];
+    });
+    return [...new Set(expanded)];
+  }
+
 
   // @Cron(CronExpression.EVERY_WEEKEND)
   async deleteOldPosts() {
@@ -111,7 +140,7 @@ export class PostCarrierService {
         postData.dhdRadius = postData.dhdRadius;
       }
       let mongoose = require('mongoose')
-      let id = mongoose.Types.ObjectId(postData._id);
+      let id = new mongoose.Types.ObjectId(postData._id);
       await this.normalizeCarrierPostDates(postData);
       this.syncMongoGeo(postData.origin);
       this.syncMongoGeo(postData.destination);
@@ -155,7 +184,7 @@ export class PostCarrierService {
   async updatePostTime(postId, userId, post, companyId) {
     try {
       let mongoose = require('mongoose')
-      let id = mongoose.Types.ObjectId(postId);
+      let id = new mongoose.Types.ObjectId(postId);
       let curDate = new Date();
       post.publishedAt = curDate;
       let company = await this.CompanyModel.findById(companyId);
@@ -312,12 +341,8 @@ export class PostCarrierService {
 
   }
   async search(data, userId): Promise<ResponseCarrierPostDTO[]> {
-    let capacitySearch;
-    if (data.capacitySearch === 'both') {
-      capacitySearch = ['full', 'partial']
-    } else {
-      capacitySearch = [data.capacitySearch]
-    }
+    const capacitySearch = this.buildCapacitySearch(data.capacitySearch);
+    data = { ...data, equipment: this.buildEquipmentSearch(data.equipment) };
 
     return await this.doSearchOrineDestination(data, capacitySearch, userId)
   }
@@ -1240,7 +1265,7 @@ export class PostCarrierService {
 
   async getSinglePost(postId): Promise<ResponseCarrierPostDTO> {
     let mongoose = require('mongoose')
-    let id = mongoose.Types.ObjectId(postId);
+    let id = new mongoose.Types.ObjectId(postId);
     let postAg = await this.PostModel.aggregate(
       [
         {

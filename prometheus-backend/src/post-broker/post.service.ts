@@ -55,6 +55,35 @@ export class PostBrokerService {
 
   private geocodeCache = new Map<string, { lat: number; lng: number }>();
 
+  private buildCapacitySearch(value: any): string[] {
+    const normalized = String(value ?? "both").trim().toLowerCase();
+    const values = normalized === "both" || !normalized
+      ? ["full", "partial"]
+      : [normalized];
+    const variants = values.flatMap((entry) => [
+      entry,
+      entry.toUpperCase(),
+      entry.charAt(0).toUpperCase() + entry.slice(1),
+    ]);
+    return [...new Set(variants)];
+  }
+
+  private buildEquipmentSearch(value: any): string[] {
+    const rawItems = Array.isArray(value) ? value : [value];
+    const normalized = rawItems
+      .map((item) => String(item ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    const expanded = normalized.flatMap((code) => {
+      if (code === "V" || code === "VZ") return ["V", "VZ"];
+      if (code === "R" || code === "RZ") return ["R", "RZ"];
+      if (code === "F" || code === "FZ") return ["F", "FZ"];
+      if (code === "C" || code === "CZ") return ["C", "CZ"];
+      if (code === "T" || code === "TZ") return ["T", "TZ"];
+      return [code];
+    });
+    return [...new Set(expanded)];
+  }
+
   async importFromLoadboardPayload(parsed: any) {
     const loadPostings = parsed?.LBNLoadPostings ?? {};
     const postingAccount = loadPostings?.PostingAccount ?? {};
@@ -997,7 +1026,7 @@ export class PostBrokerService {
 
   async getSinglePost(postId): Promise<ResponseBrokerPostDTO> {
     let mongoose = require('mongoose')
-    let id = mongoose.Types.ObjectId(postId);
+    let id = new mongoose.Types.ObjectId(postId);
     let find = await this.PostModel.find({_id:postId})
     let postAg = await this.PostModel.aggregate(
       [
@@ -1096,12 +1125,8 @@ export class PostBrokerService {
   async search(data, userId): Promise<ResponseBrokerPostDTO[]> {
     
     
-    let capacitySearch;
-    if (data.capacitySearch === 'both' || !data.capacitySearch) {
-      capacitySearch = ['full', 'partial'];
-    } else {
-      capacitySearch = [data.capacitySearch];
-    }
+    const capacitySearch = this.buildCapacitySearch(data.capacitySearch);
+    data = { ...data, equipment: this.buildEquipmentSearch(data.equipment) };
     const dateWindow = await this.buildSearchWindow(data);
     if (data.destination) {
       if (data.destination.type === 'place') {

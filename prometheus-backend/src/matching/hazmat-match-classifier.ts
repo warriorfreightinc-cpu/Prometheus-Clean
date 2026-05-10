@@ -58,6 +58,14 @@ const EQUIPMENT_ALIASES: Record<string, string> = {
 
 const HAZMAT_CODES = new Set(["VZ", "RZ", "FZ", "CZ", "TZ"]);
 
+const BASE_TO_HAZMAT_CODE: Record<string, string> = {
+  V: "VZ",
+  R: "RZ",
+  F: "FZ",
+  C: "CZ",
+  T: "TZ",
+};
+
 const HAZMAT_EQUIPMENT_NAMES: Record<string, string> = {
   VZ: "van hazmat",
   RZ: "reefer hazmat",
@@ -75,11 +83,25 @@ export function normalizeEquipmentCodes(value: unknown): string[] {
   return [...new Set(codes)];
 }
 
+function effectiveHazmatCodes(equipment: string[], nonHazmat?: boolean): string[] {
+  if (nonHazmat) {
+    return equipment;
+  }
+
+  return [...new Set(equipment.map((code) => BASE_TO_HAZMAT_CODE[code] ?? code))];
+}
+
 export function classifyHazmatCandidate(
   input: HazmatCandidateInput
 ): HazmatCandidateDecision {
-  const sourceEquipment = normalizeEquipmentCodes(input.sourceEquipment);
-  const candidateEquipment = normalizeEquipmentCodes(input.candidateEquipment);
+  const sourceEquipment = effectiveHazmatCodes(
+    normalizeEquipmentCodes(input.sourceEquipment),
+    input.sourceNonHazmat
+  );
+  const candidateEquipment = effectiveHazmatCodes(
+    normalizeEquipmentCodes(input.candidateEquipment),
+    input.candidateNonHazmat
+  );
   const reasonCodes: string[] = [];
 
   const sourceHazmat =

@@ -17,24 +17,24 @@ export class EmailExists implements ValidatorConstraintInterface {
 
   async validate(email: string, args: ValidationArguments) {
     try {
-      let mongoose = require('mongoose')
-      const id = mongoose.Types.ObjectId((args.object as any)._id)
-      //console.log(id);
-      const existingEmail = await this.UserModel.findOne({ email ,_id:{$ne:id}});
-      //console.log(existingEmail);
-      //const validationOptions = args.constraints[0] as ValidationOptions;
-      //const idField = validationOptions.idField;
-
-    //  const id = args.object[idField];  // Extracting the id from the DTO
-      if (existingEmail) {
-        return false;
+      const normalizedEmail = String(email ?? "").trim().toLowerCase();
+      if (!normalizedEmail) {
+        return true;
       }
+
+      let mongoose = require('mongoose')
+      const rawId = (args.object as any)?._id;
+      const query: any = { email: normalizedEmail };
+      if (rawId && mongoose.Types.ObjectId.isValid(rawId)) {
+        query._id = { $ne: new mongoose.Types.ObjectId(rawId) };
+      }
+
+      const existingEmail = await this.UserModel.findOne(query);
+      return !existingEmail;
     } catch (e) {
      // console.log(e);
       return false;
     }
-
-    return true;
   }
 
   defaultMessage(args: ValidationArguments) {
