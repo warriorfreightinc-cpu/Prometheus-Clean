@@ -485,26 +485,30 @@ export class UserService {
   }
 
   private async sendEmail(targetEmail: Array<String>, emailSubject: string, htmlContent: string) {
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: +process.env.MAIL_PORT,
-      pool: true,
-      secure: !!+process.env.MAIL_PORT_SECURE,
-      auth: {
-        user: process.env.MAIL_USER, // generated ethereal user
-        pass: process.env.MAIL_PASSWORD // generated ethereal password
-      },
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.MAIL_HOST,
+        port: +process.env.MAIL_PORT,
+        pool: true,
+        secure: !!+process.env.MAIL_PORT_SECURE,
+        auth: {
+          user: process.env.MAIL_USER, // generated ethereal user
+          pass: process.env.MAIL_PASSWORD // generated ethereal password
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
 
-    await transporter.sendMail({
-      from: process.env.PROJECT_NAME + " Service <" + process.env.MAIL_USER + ">",
-      to: targetEmail as any, // list of receivers
-      subject: emailSubject, // Subject line
-      html: htmlContent // html body
-    });
+      await transporter.sendMail({
+        from: process.env.PROJECT_NAME + " Service <" + process.env.MAIL_USER + ">",
+        to: targetEmail as any, // list of receivers
+        subject: emailSubject, // Subject line
+        html: htmlContent // html body
+      });
+    } catch (err) {
+      console.error("Email not sent:", err?.message ?? err);
+    }
   }
 
 
