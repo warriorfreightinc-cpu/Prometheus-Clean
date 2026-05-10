@@ -8,6 +8,7 @@ import { PostCarrierModule } from "src/post-carrier/post.module";
 import { PostCarrierSchema } from "src/post-carrier/schema/post.schema";
 import { RoutingModule } from "src/routing/routing.module";
 import { MatchingController } from "./matching.controller";
+import { AgentCommandService } from "./agent-command.service";
 import { MatchingAssistantService } from "./matching-assistant.service";
 import { MatchingService } from "./matching.service";
 import { MatchOpportunitySchema } from "./schema/match-opportunity.schema";
@@ -30,7 +31,7 @@ import { MatchingAssistantEventSchema } from "./schema/matching-assistant-event.
     forwardRef(() => PostCarrierModule),
   ],
   controllers: [MatchingController],
-  providers: [MatchingService, MatchingAssistantService],
-  exports: [MatchingService, MatchingAssistantService],
+  providers: [MatchingService, MatchingAssistantService, AgentCommandService],
+  exports: [MatchingService, MatchingAssistantService, AgentCommandService],
 })
 export class MatchingModule {}
