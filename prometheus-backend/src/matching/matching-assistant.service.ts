@@ -8,6 +8,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { AppGateway } from "src/gateway/app.gateway";
 import { MessagesService } from "src/messages/messages.service";
+import { AgentCommandService } from "./agent-command.service";
 import { MatchingAssistantCommandDTO } from "./dto/matching-assistant.dto";
 import { MatchOpportunity } from "./interface/match-opportunity.interface";
 import {
@@ -23,7 +24,8 @@ export class MatchingAssistantService {
     @InjectModel("matchingAssistantEvent")
     private readonly eventModel: Model<MatchingAssistantEvent>,
     private readonly messagesService: MessagesService,
-    private readonly gateway: AppGateway
+    private readonly gateway: AppGateway,
+    private readonly agentCommandService: AgentCommandService
   ) {}
 
   async listEvents(user: any) {
@@ -207,6 +209,22 @@ export class MatchingAssistantService {
         availableCommands: [],
       });
       this.broadcast(userId, userEvent);
+    }
+
+    if (prompt) {
+      const agentResult = await this.agentCommandService.handlePrompt(prompt, user);
+      if (agentResult.handled) {
+        const event = await this.createEvent({
+          companyId,
+          userId,
+          role: "assistant",
+          sourcePostId: sourcePostId || agentResult.sourcePostId || undefined,
+          message: agentResult.message,
+          availableCommands: [],
+        });
+        this.broadcast(userId, event);
+        return event;
+      }
     }
 
     if (normalized === "show matches" || normalized === "show next") {

@@ -21,13 +21,17 @@ describe("MatchingAssistantService", () => {
   const gateway: any = {
     broadcast: jest.fn(),
   };
+  const agentCommandService: any = {
+    handlePrompt: jest.fn(),
+  };
 
   const createService = () =>
     new MatchingAssistantService(
       opportunityModel,
       eventModel,
       messagesService,
-      gateway
+      gateway,
+      agentCommandService
     );
 
   const mockOpportunityList = (opportunities: any[]) => {
@@ -40,6 +44,7 @@ describe("MatchingAssistantService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    agentCommandService.handlePrompt.mockResolvedValue({ handled: false, message: "" });
     eventModel.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
     });
@@ -381,6 +386,30 @@ describe("MatchingAssistantService", () => {
       "broker-user-1",
       expect.objectContaining({ type: "matchingAssistantEvent" })
     );
+  });
+
+  it("routes broad search prompts to the agent command service", async () => {
+    agentCommandService.handlePrompt.mockResolvedValue({
+      handled: true,
+      message: "I found 3 hazmat loads out of Memphis from the last 5 hours.",
+      metadata: { commandType: "search" },
+    });
+    eventModel.create.mockImplementation(async (event) => ({ ...event, _id: "event-1" }));
+
+    const result: any = await createService().handleCommand(
+      { prompt: "anything out of Memphis from the last 5 hours", sourcePostId: "" },
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(agentCommandService.handlePrompt).toHaveBeenCalledWith(
+      "anything out of Memphis from the last 5 hours",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+    expect(result.message).toContain("3 hazmat loads");
+    expect(eventModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      role: "assistant",
+      message: "I found 3 hazmat loads out of Memphis from the last 5 hours.",
+    }));
   });
 
   it("creates booking rooms with role-correct broker and carrier posts", async () => {
