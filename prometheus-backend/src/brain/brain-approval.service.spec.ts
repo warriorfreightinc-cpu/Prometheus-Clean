@@ -8,8 +8,8 @@ describe("BrainApprovalService", () => {
     role: "carrier",
   };
 
-  const createService = (approvalModel: any, events: any) =>
-    new BrainApprovalService(approvalModel, events);
+  const createService = (approvalModel: any, events: any, memory?: any) =>
+    new BrainApprovalService(approvalModel, events, memory);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -89,6 +89,123 @@ describe("BrainApprovalService", () => {
     expect(events.record).toHaveBeenCalledWith(expect.objectContaining({
       type: "approvalRejected",
       intent: "sendChat",
+    }));
+  });
+
+  it("executes save-memory approvals and records action execution", async () => {
+    const approval = {
+      _id: "approval-1",
+      companyId: "company-1",
+      requestedBy: "user-1",
+      role: "carrier",
+      actionType: "saveMemory",
+      status: "pending",
+      summary: "Approve saving James preference",
+      payload: { content: "James prefers loads under 44000 lb" },
+    };
+    const approvalModel = {
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(approval),
+      }),
+      findByIdAndUpdate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...approval,
+          status: "executed",
+          result: { memoryId: "memory-1", message: "Memory saved." },
+        }),
+      }),
+    };
+    const events = {
+      record: jest.fn().mockResolvedValue({ _id: "event-1" }),
+    };
+    const memory = {
+      saveApprovedMemory: jest.fn().mockResolvedValue({ _id: "memory-1" }),
+    };
+
+    const updated = await createService(approvalModel, events, memory).approve(
+      "approval-1",
+      user
+    );
+
+    expect(memory.saveApprovedMemory).toHaveBeenCalledWith(approval, user);
+    expect(approvalModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      "approval-1",
+      expect.objectContaining({
+        status: "executed",
+        result: { memoryId: "memory-1", message: "Memory saved." },
+        decidedBy: "user-1",
+        decisionAt: expect.any(Date),
+      }),
+      { new: true }
+    );
+    expect(updated.status).toBe("executed");
+    expect(events.record).toHaveBeenCalledWith(expect.objectContaining({
+      type: "approvalAccepted",
+      intent: "saveMemory",
+    }));
+    expect(events.record).toHaveBeenCalledWith(expect.objectContaining({
+      type: "actionExecuted",
+      intent: "saveMemory",
+      message: "Memory saved.",
+      payload: { memoryId: "memory-1", message: "Memory saved." },
+    }));
+  });
+
+  it("approves provider actions without executing an external provider", async () => {
+    const approval = {
+      _id: "approval-1",
+      companyId: "company-1",
+      requestedBy: "user-1",
+      role: "carrier",
+      actionType: "sendEmail",
+      status: "pending",
+      summary: "Send this email?",
+      payload: { to: "broker@example.com", body: "Any loads out of CO?" },
+    };
+    const approvalModel = {
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(approval),
+      }),
+      findByIdAndUpdate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ...approval,
+          status: "approved",
+          result: {
+            providerStatus: "pending_provider_connection",
+            message: "Approved. Provider execution is not connected in Brain V1.",
+          },
+        }),
+      }),
+    };
+    const events = {
+      record: jest.fn().mockResolvedValue({ _id: "event-1" }),
+    };
+    const memory = {
+      saveApprovedMemory: jest.fn(),
+    };
+
+    const updated = await createService(approvalModel, events, memory).approve(
+      "approval-1",
+      user
+    );
+
+    expect(memory.saveApprovedMemory).not.toHaveBeenCalled();
+    expect(approvalModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      "approval-1",
+      expect.objectContaining({
+        status: "approved",
+        result: {
+          providerStatus: "pending_provider_connection",
+          message: "Approved. Provider execution is not connected in Brain V1.",
+        },
+      }),
+      { new: true }
+    );
+    expect(updated.status).toBe("approved");
+    expect(events.record).toHaveBeenCalledWith(expect.objectContaining({
+      type: "actionExecuted",
+      intent: "sendEmail",
+      message: "Approved. Provider execution is not connected in Brain V1.",
     }));
   });
 

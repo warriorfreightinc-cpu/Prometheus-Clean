@@ -1,12 +1,16 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
+  forwardRef,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { BrainEventService } from "./brain-event.service";
+import { BrainMemoryService } from "./brain-memory.service";
 import {
   CreatePrometheusBrainApproval,
   PrometheusBrainApproval,
@@ -17,7 +21,10 @@ export class BrainApprovalService {
   constructor(
     @InjectModel("prometheusBrainApproval")
     private readonly approvalModel: Model<any>,
-    private readonly events: BrainEventService
+    private readonly events: BrainEventService,
+    @Optional()
+    @Inject(forwardRef(() => BrainMemoryService))
+    private readonly memory?: BrainMemoryService
   ) {}
 
   async createRequest(input: CreatePrometheusBrainApproval) {
@@ -52,16 +59,29 @@ export class BrainApprovalService {
       throw new BadRequestException("This approval is not pending.");
     }
 
-    const result = {
+    let status: "approved" | "executed" = "approved";
+    let result: Record<string, unknown> = {
       providerStatus: "pending_provider_connection",
       message: "Approved. Provider execution is not connected in Brain V1.",
     };
+
+    if (approval.actionType === "saveMemory") {
+      if (!this.memory) {
+        throw new BadRequestException("Memory execution is not available.");
+      }
+      const saved = await this.memory.saveApprovedMemory(approval, user);
+      status = "executed";
+      result = {
+        memoryId: String(saved?._id ?? ""),
+        message: "Memory saved.",
+      };
+    }
 
     const updated = await this.approvalModel
       .findByIdAndUpdate(
         approvalId,
         {
-          status: "approved",
+          status,
           result,
           decidedBy: String(user._id),
           decisionAt: new Date(),
@@ -79,6 +99,17 @@ export class BrainApprovalService {
       intent: approval.actionType,
       message: approval.summary,
       payload: approval.payload,
+    });
+
+    await this.events.record({
+      companyId: String(user.companyId),
+      userId: String(user._id),
+      role: String(user.role),
+      source: "matching",
+      type: "actionExecuted",
+      intent: approval.actionType,
+      message: String(result.message ?? "Approved."),
+      payload: result,
     });
 
     return updated;

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, forwardRef } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { BrainApprovalService } from "./brain-approval.service";
@@ -24,6 +24,7 @@ export class BrainMemoryService {
     private readonly memoryModel: Model<any>,
     @InjectModel("Company")
     private readonly companyModel: Model<any>,
+    @Inject(forwardRef(() => BrainApprovalService))
     private readonly approvals: BrainApprovalService,
     private readonly events: BrainEventService
   ) {}
