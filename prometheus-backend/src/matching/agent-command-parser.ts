@@ -8,6 +8,7 @@ export interface ParsedAgentCommand {
   maxWeight?: number | null;
   maxLength?: number | null;
   capacity?: "full" | "partial" | "any";
+  equipmentCodes?: string[];
   limit?: number;
   showMore?: boolean;
   mapRequested?: boolean;
@@ -46,6 +47,7 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     : /\bfull|ftl\b/i.test(text)
     ? "full"
     : "any";
+  const equipmentCodes = parseEquipmentCodes(text);
 
   return {
     intent: "search",
@@ -55,10 +57,21 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     maxWeight: weightMatch ? Number(weightMatch[1].replace(/,/g, "")) : null,
     maxLength: lengthMatch ? Number(lengthMatch[1]) : null,
     capacity,
+    ...(equipmentCodes.length ? { equipmentCodes } : {}),
     limit: 20,
     showMore: false,
     mapRequested: /\bmap|around\b/i.test(text),
   };
+}
+
+function parseEquipmentCodes(text: string): string[] {
+  if (/\b(rz|reefer|refrigerated)\b/i.test(text)) {
+    return ["RZ"];
+  }
+  if (/\b(vz|dry\s*van|van)\b/i.test(text)) {
+    return ["VZ"];
+  }
+  return [];
 }
 
 function parseLocation(text: string): { city: string; state: string } {

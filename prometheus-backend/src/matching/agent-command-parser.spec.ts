@@ -40,6 +40,21 @@ describe("parseAgentCommand", () => {
     });
   });
 
+  it("parses hazmat equipment preferences", () => {
+    expect(parseAgentCommand("find reefer hazmat loads out of Houston TX")).toMatchObject({
+      intent: "search",
+      originCity: "Houston",
+      originState: "TX",
+      equipmentCodes: ["RZ"],
+    });
+    expect(parseAgentCommand("show dry van hazmat around Chicago IL")).toMatchObject({
+      intent: "search",
+      originCity: "Chicago",
+      originState: "IL",
+      equipmentCodes: ["VZ"],
+    });
+  });
+
   it("parses show more", () => {
     expect(parseAgentCommand("show me more")).toMatchObject({
       intent: "showMore",

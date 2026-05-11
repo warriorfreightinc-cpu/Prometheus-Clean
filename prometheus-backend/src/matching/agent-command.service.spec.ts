@@ -13,6 +13,16 @@ describe("AgentCommandService", () => {
     return { sort, limit, lean };
   };
 
+  const chainFindSequence = (model: any, resultSets: any[][]) => {
+    model.find.mockImplementation(() => {
+      const results = resultSets.shift() ?? [];
+      const lean = jest.fn().mockResolvedValue(results);
+      const limit = jest.fn().mockReturnValue({ lean });
+      const sort = jest.fn().mockReturnValue({ limit });
+      return { sort };
+    });
+  };
+
   const createService = () =>
     new AgentCommandService(brokerPostModel, carrierPostModel, companyModel);
 
@@ -97,6 +107,40 @@ describe("AgentCommandService", () => {
     expect(result.handled).toBe(true);
     expect(result.metadata?.mapRequested).toBe(true);
     expect(result.message).toContain("map");
+  });
+
+  it("suggests permission-based equipment alternatives when exact hazmat equipment is not available", async () => {
+    chainFindSequence(brokerPostModel, [
+      [],
+      [
+        {
+          _id: "load-1",
+          origin: { place: { city: "Houston", state: "TX" } },
+          destination: { place: { city: "Chicago", state: "IL" } },
+          equipment: ["VZ"],
+          weight: 41000,
+          length: 53,
+          rate: 3000,
+          publishedAt: new Date("2026-05-10T15:00:00.000Z"),
+        },
+      ],
+    ]);
+
+    const result = await createService().handlePrompt(
+      "find reefer hazmat loads out of Houston TX under 44000",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(brokerPostModel.find).toHaveBeenCalledWith(expect.objectContaining({
+      equipment: { $in: ["RZ"] },
+    }));
+    expect(brokerPostModel.find).toHaveBeenCalledWith(expect.objectContaining({
+      equipment: { $in: ["VZ", "V"] },
+    }));
+    expect(result.handled).toBe(true);
+    expect(result.message).toContain("No exact RZ hazmat loads");
+    expect(result.message).toContain("1 permission-based VZ/V alternative");
+    expect(result.message).toContain("ask the broker");
   });
 
   it("uses company type for owner/admin users", async () => {

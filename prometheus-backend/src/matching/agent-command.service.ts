@@ -48,6 +48,31 @@ export class AgentCommandService {
       .limit(parsed.limit ?? 20)
       .lean<any[]>();
 
+    if (!results.length && parsed.equipmentCodes?.length) {
+      const alternativeQuery = this.buildEquipmentAlternativeQuery(query, parsed.equipmentCodes);
+      if (alternativeQuery) {
+        const alternativeResults = await target.model
+          .find(alternativeQuery)
+          .sort({ publishedAt: -1, createdAt: -1 })
+          .limit(parsed.limit ?? 20)
+          .lean<any[]>();
+        if (alternativeResults.length) {
+          return {
+            handled: true,
+            message: this.renderEquipmentAlternativeMessage(parsed, alternativeResults, target.label),
+            metadata: {
+              commandType: "search",
+              targetType: target.label,
+              resultCount: alternativeResults.length,
+              exactResultCount: 0,
+              alternativeEquipment: true,
+              mapRequested: Boolean(parsed.mapRequested),
+            },
+          };
+        }
+      }
+    }
+
     return {
       handled: true,
       message: this.renderSearchMessage(parsed, results, target.label),
@@ -111,8 +136,22 @@ export class AgentCommandService {
     if (parsed.capacity && parsed.capacity !== "any") {
       query.capacity = { $in: this.capacityVariants(parsed.capacity) };
     }
+    if (parsed.equipmentCodes?.length) {
+      query.equipment = { $in: parsed.equipmentCodes };
+    }
 
     return query;
+  }
+
+  private buildEquipmentAlternativeQuery(query: any, equipmentCodes: string[]) {
+    const alternatives = this.permissionAlternativeEquipment(equipmentCodes);
+    if (!alternatives.length) {
+      return null;
+    }
+    return {
+      ...query,
+      equipment: { $in: alternatives },
+    };
   }
 
   private renderSearchMessage(
@@ -128,6 +167,7 @@ export class AgentCommandService {
       parsed.maxWeight ? `under ${parsed.maxWeight.toLocaleString()} lb` : "",
       parsed.maxLength ? `under ${parsed.maxLength} ft` : "",
       parsed.capacity && parsed.capacity !== "any" ? `${parsed.capacity} only` : "",
+      parsed.equipmentCodes?.length ? `${parsed.equipmentCodes.join("/")} equipment` : "",
     ].filter(Boolean).join(" ");
 
     if (!results.length) {
@@ -152,6 +192,27 @@ export class AgentCommandService {
       : "";
 
     return `I found ${results.length} hazmat ${plural} ${filters || "for that search"}.\n${lines.join("\n")}${more}${mapNote}`;
+  }
+
+  private renderEquipmentAlternativeMessage(
+    parsed: ParsedAgentCommand,
+    results: any[],
+    label: "load" | "truck"
+  ): string {
+    const requested = parsed.equipmentCodes?.join("/") || "requested equipment";
+    const alternatives = this.permissionAlternativeEquipment(parsed.equipmentCodes ?? []).join("/");
+    const plural = results.length === 1 ? "alternative" : "alternatives";
+    const city = [parsed.originCity, parsed.originState].filter(Boolean).join(", ") || "that area";
+    const counterpart = label === "load" ? "broker" : "carrier";
+    const lines = results.slice(0, 5).map((post, index) => {
+      const lane = this.formatLane(post);
+      const equipment = this.formatEquipment(post.equipment);
+      const weight = this.formatWeight(post.weight);
+      const rate = this.formatRate(post.rate);
+      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}`;
+    });
+
+    return `No exact ${requested} hazmat ${label}s out of ${city} right now. I found ${results.length} permission-based ${alternatives} ${plural}. I can ask the ${counterpart} if this equipment substitution can work.\n${lines.join("\n")}`;
   }
 
   private formatLane(post: any): string {
@@ -187,6 +248,16 @@ export class AgentCommandService {
       value.charAt(0).toUpperCase() + value.slice(1),
       value.toUpperCase(),
     ];
+  }
+
+  private permissionAlternativeEquipment(equipmentCodes: string[]): string[] {
+    if (equipmentCodes.includes("RZ")) {
+      return ["VZ", "V"];
+    }
+    if (equipmentCodes.includes("VZ")) {
+      return ["RZ", "R"];
+    }
+    return [];
   }
 
   private escapeRegex(value: string): string {
