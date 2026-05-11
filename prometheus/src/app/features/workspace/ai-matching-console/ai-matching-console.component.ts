@@ -1,5 +1,5 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { ChatbbThreadMessage } from '../../../shared/types/models';
+import { ChatbbThreadMessage, PrometheusBrainApproval } from '../../../shared/types/models';
 import { formatChatTimeLabel } from '../../../shared/time/chat-time-label';
 
 type ConsoleBubble = {
@@ -22,9 +22,12 @@ export class AiMatchingConsoleComponent {
   @Input() chatbbError = '';
   @Input() chatbbPrompt = '';
   @Input() dispatchRoleLabel = 'posts';
+  @Input() pendingBrainApprovals: PrometheusBrainApproval[] = [];
 
   @Output() chatbbPromptChange = new EventEmitter<string>();
   @Output() submitConsole = new EventEmitter<void>();
+  @Output() approveBrainRequest = new EventEmitter<PrometheusBrainApproval>();
+  @Output() rejectBrainRequest = new EventEmitter<PrometheusBrainApproval>();
 
   updatePrompt(value: string): void {
     this.chatbbPromptChange.emit(value);
@@ -32,6 +35,14 @@ export class AiMatchingConsoleComponent {
 
   submit(): void {
     this.submitConsole.emit();
+  }
+
+  approve(approval: PrometheusBrainApproval): void {
+    this.approveBrainRequest.emit(approval);
+  }
+
+  reject(approval: PrometheusBrainApproval): void {
+    this.rejectBrainRequest.emit(approval);
   }
 
   trackByBubble(_: number, bubble: ConsoleBubble): string {

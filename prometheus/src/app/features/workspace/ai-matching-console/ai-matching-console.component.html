@@ -35,6 +35,26 @@
       <div class="loading-inline" *ngIf="chatbbLoading">Prometheus is reviewing the selected lane...</div>
     </div>
 
+    <div class="brain-approval-stack" *ngIf="pendingBrainApprovals.length">
+      <article
+        class="brain-approval-card"
+        *ngFor="let approval of pendingBrainApprovals"
+        [class.is-complete]="approval.status !== 'pending'"
+      >
+        <div>
+          <p class="approval-eyebrow">PROMETHEUS APPROVAL</p>
+          <h3>{{ approval.label }}</h3>
+          <p>{{ approval.summary }}</p>
+          <small>{{ approval.riskNote }}</small>
+        </div>
+        <div class="brain-approval-actions" *ngIf="approval.status === 'pending'">
+          <button type="button" class="approval-primary" (click)="approve(approval)">Approve</button>
+          <button type="button" class="approval-secondary" (click)="reject(approval)">Reject</button>
+        </div>
+        <span class="approval-status" *ngIf="approval.status !== 'pending'">{{ approval.status }}</span>
+      </article>
+    </div>
+
     <div class="chat-input">
       <input
         [ngModel]="chatbbPrompt"

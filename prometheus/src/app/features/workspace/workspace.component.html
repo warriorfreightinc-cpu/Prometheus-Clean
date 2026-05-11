@@ -86,8 +86,11 @@
         [chatbbError]="chatbbError"
         [chatbbPrompt]="chatbbPrompt"
         [dispatchRoleLabel]="dispatchRoleLabel"
+        [pendingBrainApprovals]="pendingBrainApprovals"
         (chatbbPromptChange)="chatbbPrompt = $event"
         (submitConsole)="submitMatchingConsole()"
+        (approveBrainRequest)="approveBrainRequest($event)"
+        (rejectBrainRequest)="rejectBrainRequest($event)"
       ></app-ai-matching-console>
 
       <section class="panel" *ngIf="activeTab === 'loads'">

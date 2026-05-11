@@ -4,6 +4,7 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { Router } from '@angular/router';
+import { BrainApiService } from '../../core/api/brain-api.service';
 import { ChatbbApiService } from '../../core/api/chatbb-api.service';
 import { LoadsApiService } from '../../core/api/loads-api.service';
 import { MatchingApiService } from '../../core/api/matching-api.service';
@@ -29,6 +30,15 @@ describe('WorkspaceComponent workspace tabs', () => {
       overrides['session'] ?? {} as any,
       overrides['postsApi'] ?? {} as any,
       overrides['matchingApi'] ?? {} as any,
+      overrides['brainApi'] ?? {
+        sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+          handled: true,
+          intent: 'generalTransportation',
+          answer: 'Prometheus Brain is ready.',
+        })),
+        approve: jasmine.createSpy('approve').and.returnValue(of({})),
+        reject: jasmine.createSpy('reject').and.returnValue(of({})),
+      } as any,
       overrides['loadsApi'] ?? {} as any,
       overrides['messagesApi'] ?? {
         updateBookingWorkflow: jasmine.createSpy('updateBookingWorkflow').and.returnValue(of({})),
@@ -72,6 +82,14 @@ describe('WorkspaceComponent workspace tabs', () => {
         { provide: AuthSessionService, useValue: { currentUser: null, restoreSession: () => of(false) } },
         { provide: PostsApiService, useValue: {} },
         { provide: MatchingApiService, useValue: {} },
+        {
+          provide: BrainApiService,
+          useValue: {
+            sendPrompt: () => of({ handled: true, intent: 'generalTransportation', answer: 'Prometheus Brain is ready.' }),
+            approve: () => of({}),
+            reject: () => of({}),
+          },
+        },
         { provide: LoadsApiService, useValue: {} },
         {
           provide: MessagesApiService,
@@ -590,11 +608,18 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(matchingApi.sendAssistantCommand).not.toHaveBeenCalled();
   });
 
-  it('answers market questions in the matching console without using preview booking rooms', () => {
+  it('routes market questions through Prometheus Brain without requiring a booking room', () => {
     const chatbbApi = {
       createMessage: jasmine.createSpy('createMessage').and.returnValue(throwError(() => new Error('preview room should not be used'))),
     };
-    const component = createComponent({ chatbbApi });
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'search',
+        answer: 'Brain found hazmat options around Memphis, TN.',
+      })),
+    };
+    const component = createComponent({ chatbbApi, brainApi });
     component.user = userWithRole('broker');
     component.activeTab = 'matching';
     component.selectedPostId = 'broker-load-1';
@@ -611,16 +636,25 @@ describe('WorkspaceComponent workspace tabs', () => {
     component.submitMatchingConsole();
 
     expect(chatbbApi.createMessage).not.toHaveBeenCalled();
+    expect(brainApi.sendPrompt).toHaveBeenCalledWith({
+      prompt: 'do you have anything out of memphis,tn?',
+      source: 'matching',
+      related: { sourcePostId: 'broker-load-1' },
+    });
     const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
-    expect(answer).toContain('for Memphis, TN');
-    expect(answer).toContain('Memphis, TN');
-    expect(answer).not.toContain('Do You Have');
-    expect(answer).toContain('Prometheus internal board');
+    expect(answer).toContain('Brain found hazmat options around Memphis, TN.');
     expect(component.chatbbError).toBe('');
   });
 
-  it('keeps market map questions in the market assistant instead of opening route intelligence', () => {
-    const component = createComponent();
+  it('routes market map questions through Prometheus Brain instead of opening route intelligence', () => {
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'map',
+        answer: 'Brain can prepare map clusters for Chicago, IL.',
+      })),
+    };
+    const component = createComponent({ brainApi });
     component.user = userWithRole('broker');
     component.activeTab = 'matching';
     component.posts = [
@@ -639,11 +673,19 @@ describe('WorkspaceComponent workspace tabs', () => {
 
     const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
     expect(component.routeIntelligencePanel.open).toBeFalse();
-    expect(answer).toContain('Prometheus internal board ratio for Chicago, IL');
+    expect(brainApi.sendPrompt).toHaveBeenCalled();
+    expect(answer).toContain('Brain can prepare map clusters for Chicago, IL.');
   });
 
-  it('keeps simple load map market questions in the market assistant', () => {
-    const component = createComponent();
+  it('keeps simple market map prompts in Prometheus Brain', () => {
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'map',
+        answer: 'Brain can prepare load map context.',
+      })),
+    };
+    const component = createComponent({ brainApi });
     component.user = userWithRole('broker');
     component.activeTab = 'matching';
     component.posts = [
@@ -662,11 +704,19 @@ describe('WorkspaceComponent workspace tabs', () => {
 
     const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
     expect(component.routeIntelligencePanel.open).toBeFalse();
-    expect(answer).toContain('Prometheus internal board ratio');
+    expect(brainApi.sendPrompt).toHaveBeenCalled();
+    expect(answer).toContain('Brain can prepare load map context.');
   });
 
-  it('keeps rate and alternative lane questions in the market assistant', () => {
-    const component = createComponent();
+  it('routes rate and alternative lane questions through Prometheus Brain', () => {
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.callFake((payload: any) => of({
+        handled: true,
+        intent: 'search',
+        answer: payload.prompt.includes('rates') ? 'Brain rate read.' : 'Brain alternative lane read.',
+      })),
+    };
+    const component = createComponent({ brainApi });
     component.user = userWithRole('broker');
     component.activeTab = 'matching';
     component.posts = [
@@ -685,14 +735,86 @@ describe('WorkspaceComponent workspace tabs', () => {
 
     let answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
     expect(component.routeIntelligencePanel.open).toBeFalse();
-    expect(answer).toContain('Prometheus internal board rate read');
+    expect(answer).toContain('Brain rate read.');
 
     component.chatbbPrompt = 'show alternative lanes around Chicago, IL';
     component.submitMatchingConsole();
 
     answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
     expect(component.routeIntelligencePanel.open).toBeFalse();
-    expect(answer).toContain('Prometheus internal board for Chicago, IL');
+    expect(answer).toContain('Brain alternative lane read.');
+    expect(brainApi.sendPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it('stores Brain approval prompts returned from the matching console', () => {
+    const approval = {
+      _id: 'approval-1',
+      companyId: 'company-1',
+      requestedBy: 'user-1',
+      role: 'carrier',
+      actionType: 'sendEmail',
+      label: 'Approve email draft',
+      summary: 'Prometheus drafted an email.',
+      riskNote: 'Email is not sent until approved.',
+      payload: {},
+      status: 'pending' as const,
+    };
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'sendEmail',
+        answer: 'Approve email draft: Prometheus drafted an email.',
+        approval,
+      })),
+    };
+    const component = createComponent({ brainApi });
+    component.user = userWithRole('carrier');
+    component.activeTab = 'matching';
+    component.chatbbPrompt = 'email Brian my truck list';
+
+    component.submitMatchingConsole();
+
+    expect(component.pendingBrainApprovals).toEqual([approval]);
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Approve email draft');
+  });
+
+  it('approves and rejects Brain approval cards from the matching console', () => {
+    const approval = {
+      _id: 'approval-1',
+      companyId: 'company-1',
+      requestedBy: 'user-1',
+      role: 'carrier',
+      actionType: 'sendEmail',
+      label: 'Approve email draft',
+      summary: 'Prometheus drafted an email.',
+      riskNote: 'Email is not sent until approved.',
+      payload: {},
+      status: 'pending' as const,
+    };
+    const approved = {
+      ...approval,
+      status: 'approved' as const,
+      result: { message: 'Approved. Provider execution is not connected in Brain V1.' },
+    };
+    const rejected = { ...approval, status: 'rejected' as const };
+    const brainApi = {
+      approve: jasmine.createSpy('approve').and.returnValue(of(approved)),
+      reject: jasmine.createSpy('reject').and.returnValue(of(rejected)),
+    };
+    const component = createComponent({ brainApi });
+    component.pendingBrainApprovals = [approval];
+
+    component.approveBrainRequest(approval);
+
+    expect(brainApi.approve).toHaveBeenCalledWith('approval-1');
+    expect(component.pendingBrainApprovals[0]).toEqual(approved);
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Approved. Provider execution is not connected');
+
+    component.rejectBrainRequest(approval);
+
+    expect(brainApi.reject).toHaveBeenCalledWith('approval-1');
+    expect(component.pendingBrainApprovals[0]).toEqual(rejected);
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Rejected. I will not take that action.');
   });
 
   it('opens route intelligence from matching console map commands without using ChatBB', () => {

@@ -2,6 +2,7 @@ import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } fr
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { catchError, finalize, forkJoin, Observable, of, Subscription, switchMap } from 'rxjs';
+import { BrainApiService } from '../../core/api/brain-api.service';
 import { ChatbbApiService } from '../../core/api/chatbb-api.service';
 import { LoadsApiService } from '../../core/api/loads-api.service';
 import { MatchingApiService } from '../../core/api/matching-api.service';
@@ -34,6 +35,8 @@ import {
   MatchSourcePostType,
   PostSearchPayload,
   PostLocation,
+  PrometheusBrainApproval,
+  PrometheusBrainPromptResponse,
   PrometheusLoad,
   PrometheusLoadStatus,
   RoomIntegrationChoice,
@@ -352,6 +355,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   roomCreateError = '';
   roomCreateMessage = '';
   roomCreatePendingId = '';
+  pendingBrainApprovals: PrometheusBrainApproval[] = [];
   private announcedMatchKeys = new Set<string>();
   private matchingAssistantEventKeys = new Set<string>();
   private socketSubscription: Subscription | null = null;
@@ -362,6 +366,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     private readonly session: AuthSessionService,
     private readonly postsApi: PostsApiService,
     private readonly matchingApi: MatchingApiService,
+    private readonly brainApi: BrainApiService,
     private readonly loadsApi: LoadsApiService,
     private readonly messagesApi: MessagesApiService,
     private readonly chatbbApi: ChatbbApiService,
@@ -1043,12 +1048,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    if (!this.selectedRoom) {
-      this.chatbbError = 'Open a booking conversation first for free-form AI prompts. Local post and template commands still work without a room.';
-      return;
-    }
-
-    this.sendChatbbMessage(prompt);
+    this.sendBrainMatchingPrompt(prompt);
   }
 
   useSavedTemplate(template: SavedDispatchTemplate): void {
@@ -2529,12 +2529,6 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       return true;
     }
 
-    if (this.isMarketQuestion(normalized)) {
-      this.appendMatchingBubble('user', prompt, 'You');
-      this.answerMarketQuestion(prompt);
-      return true;
-    }
-
     if (this.isMatchListCommand(normalized)) {
       this.appendMatchingBubble('user', prompt, 'You');
       this.describeCurrentMatches();
@@ -2596,6 +2590,69 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     return false;
+  }
+
+  private sendBrainMatchingPrompt(prompt: string): void {
+    const sourcePostId = this.selectedPostId || undefined;
+    this.appendMatchingBubble('user', prompt, 'You');
+    this.chatbbPrompt = '';
+    this.chatbbLoading = true;
+    this.chatbbError = '';
+
+    this.brainApi.sendPrompt({
+      prompt,
+      source: 'matching',
+      related: sourcePostId ? { sourcePostId } : undefined,
+    }).pipe(
+      catchError(() => {
+        this.appendMatchingBubble('assistant', 'Prometheus could not answer right now. Try again.', 'Prometheus');
+        return of(null);
+      }),
+      finalize(() => {
+        this.chatbbLoading = false;
+      })
+    ).subscribe((response: PrometheusBrainPromptResponse | null) => {
+      if (!response) return;
+      this.appendMatchingBubble('assistant', response.answer, 'Prometheus');
+      if (response.approval) {
+        this.pendingBrainApprovals = [response.approval].concat(this.pendingBrainApprovals);
+      }
+    });
+  }
+
+  approveBrainRequest(approval: PrometheusBrainApproval): void {
+    const approvalId = approval._id;
+    if (!approvalId) return;
+
+    this.brainApi.approve(approvalId).subscribe({
+      next: (updated) => {
+        this.pendingBrainApprovals = this.pendingBrainApprovals.map((entry) =>
+          entry._id === approvalId ? updated : entry
+        );
+        const message = String(updated.result?.['message'] ?? 'Approved.');
+        this.appendMatchingBubble('assistant', message, 'Prometheus');
+      },
+      error: () => {
+        this.appendMatchingBubble('assistant', 'Prometheus could not approve that request right now.', 'Prometheus');
+      },
+    });
+  }
+
+  rejectBrainRequest(approval: PrometheusBrainApproval): void {
+    const approvalId = approval._id;
+    if (!approvalId) return;
+
+    this.brainApi.reject(approvalId).subscribe({
+      next: (updated) => {
+        this.pendingBrainApprovals = this.pendingBrainApprovals.map((entry) =>
+          entry._id === approvalId ? updated : entry
+        );
+        this.appendMatchingBubble('assistant', 'Rejected. I will not take that action.', 'Prometheus');
+      },
+      error: () => {
+        this.appendMatchingBubble('assistant', 'Prometheus could not reject that request right now.', 'Prometheus');
+      },
+    });
   }
 
   private isPostedListCommand(prompt: string): boolean {
