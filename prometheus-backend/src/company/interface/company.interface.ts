@@ -94,6 +94,14 @@ export interface CompanyIntegration {
   updatedAt?: Date;
 }
 
+export interface CompanyBrainSettings {
+  memoryMode?: "off" | "companyManaged" | "prometheusManaged";
+  auditRetentionDays?: number;
+  allowProviderTools?: boolean;
+  updatedBy?: string;
+  updatedAt?: Date;
+}
+
 export interface Company extends Document {
   
   adminId?: any;
@@ -117,6 +125,7 @@ export interface Company extends Document {
   subscription:any
   integrations?: CompanyIntegration[];
   onboarding?: OnboardingState;
+  brainSettings?: CompanyBrainSettings;
   deletedAt?: Date;
   deletedBy?: string;
   notes:[];

@@ -16,6 +16,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { ChatbbModule } from "./chatbb/chatbb.module";
 import { CountersModule } from "./counters/counters.module";
 import { AppGatewayModule } from "./gateway/app.gateway.module";
+import { BrainModule } from "./brain/brain.module";
 import { HistoryInterceptor } from "./interceptors/history.interceptor";
 import { LoadsModule } from "./loads/loads.module";
 import { MatchingModule } from "./matching/matching.module";
@@ -54,6 +55,7 @@ import { PostCarrierModule } from "./post-carrier/post.module";
     MessagesModule,
     LoadsModule,
     MatchingModule,
+    BrainModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,

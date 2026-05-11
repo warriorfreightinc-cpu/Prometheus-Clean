@@ -105,6 +105,23 @@ export const CompanySchema = new mongoose.Schema<Company>(
         hazmat: Object
       }
     },
+    brainSettings: {
+      memoryMode: {
+        type: String,
+        enum: ["off", "companyManaged", "prometheusManaged"],
+        default: "off"
+      },
+      auditRetentionDays: {
+        type: Number,
+        default: 365
+      },
+      allowProviderTools: {
+        type: Boolean,
+        default: false
+      },
+      updatedBy: String,
+      updatedAt: Date
+    },
     deletedAt: Date,
     deletedBy: String
   },
