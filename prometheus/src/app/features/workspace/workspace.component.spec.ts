@@ -597,15 +597,26 @@ describe('WorkspaceComponent workspace tabs', () => {
     ))).toBeTrue();
   });
 
-  it('sends assistant booking commands to the backend instead of opening local rooms', () => {
+  it('routes assistant booking commands through Brain approval instead of opening local rooms', () => {
     const matchingApi = {
-      sendAssistantCommand: jasmine.createSpy('sendAssistantCommand').and.returnValue(of({
-        created: true,
-        room: {
-          _id: 'room-1',
-          brokerPostId: 'broker-post-1',
-          carrierPostId: 'carrier-post-1',
-          bookingStatus: 'negotiating',
+      sendAssistantCommand: jasmine.createSpy('sendAssistantCommand'),
+    };
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'startBookingApproval',
+        answer: 'Approve booking request: Prometheus can start the booking approval conversation.',
+        approval: {
+          _id: 'approval-book-option-1',
+          companyId: 'company-1',
+          requestedBy: 'carrier-user',
+          role: 'carrier',
+          actionType: 'startBookingApproval',
+          label: 'Approve booking request',
+          summary: 'Prometheus can start the booking approval conversation for both sides.',
+          riskNote: 'Both broker and carrier still need to approve.',
+          payload: {},
+          status: 'pending',
         },
       })),
     };
@@ -613,7 +624,7 @@ describe('WorkspaceComponent workspace tabs', () => {
       createRoom: jasmine.createSpy('createRoom'),
       getRooms: jasmine.createSpy('getRooms').and.returnValue(of([])),
     };
-    const component = createComponent({ matchingApi, messagesApi });
+    const component = createComponent({ matchingApi, brainApi, messagesApi });
     component.user = userWithRole('carrier');
     component.selectedPostId = 'carrier-post-1';
     component.posts = [createPost({ _id: 'carrier-post-1' }) as any];
@@ -629,14 +640,15 @@ describe('WorkspaceComponent workspace tabs', () => {
 
     component.submitMatchingConsole();
 
-    expect(matchingApi.sendAssistantCommand).toHaveBeenCalledWith({
+    expect(matchingApi.sendAssistantCommand).not.toHaveBeenCalled();
+    expect(brainApi.sendPrompt).toHaveBeenCalledWith({
       prompt: 'book option 1',
-      sourcePostId: 'carrier-post-1',
+      source: 'matching',
+      related: { sourcePostId: 'carrier-post-1' },
     });
     expect(messagesApi.createRoom).not.toHaveBeenCalled();
-    expect(component.activeTab).toBe('direct');
-    expect(component.activeDirectConsoleView).toBe('booking');
-    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('booking conversation is ready');
+    expect(component.pendingBrainApprovals[0]?.label).toBe('Approve booking request');
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Approve booking request');
   });
 
   it('asks the user to select a live posting before showing assistant matches', () => {
@@ -666,6 +678,47 @@ describe('WorkspaceComponent workspace tabs', () => {
 
     expect(handled).toBeFalse();
     expect(matchingApi.sendAssistantCommand).not.toHaveBeenCalled();
+  });
+
+  it('routes booking requests through Prometheus Brain approval instead of the legacy match opener', () => {
+    const matchingApi = {
+      sendAssistantCommand: jasmine.createSpy('sendAssistantCommand'),
+    };
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
+        handled: true,
+        intent: 'startBookingApproval',
+        answer: 'Approve booking request: Prometheus can start the booking approval conversation.',
+        approval: {
+          _id: 'approval-booking-1',
+          companyId: 'company-1',
+          requestedBy: 'user-1',
+          role: 'carrier',
+          actionType: 'startBookingApproval',
+          label: 'Approve booking request',
+          summary: 'Prometheus can start the booking approval conversation for both sides.',
+          riskNote: 'Both broker and carrier still need to approve.',
+          payload: {},
+          status: 'pending',
+        },
+      })),
+    };
+    const component = createComponent({ matchingApi, brainApi });
+    component.user = userWithRole('carrier');
+    component.activeTab = 'matching';
+    component.selectedPostId = 'carrier-post-1';
+    component.chatbbPrompt = 'book match 1';
+
+    component.submitMatchingConsole();
+
+    expect(matchingApi.sendAssistantCommand).not.toHaveBeenCalled();
+    expect(brainApi.sendPrompt).toHaveBeenCalledWith({
+      prompt: 'book match 1',
+      source: 'matching',
+      related: { sourcePostId: 'carrier-post-1' },
+    });
+    expect(component.pendingBrainApprovals[0]?.label).toBe('Approve booking request');
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Approve booking request');
   });
 
   it('routes market questions through Prometheus Brain without requiring a booking room', () => {
@@ -1158,9 +1211,15 @@ describe('WorkspaceComponent workspace tabs', () => {
     component.user = userWithRole('carrier');
     component.selectedPostId = 'carrier-post-1';
     component.posts = [createPost({ _id: 'carrier-post-1' }) as any];
-    component.chatbbPrompt = 'book option 1';
-
-    component.submitMatchingConsole();
+    (component as any).handleMatchingAssistantCommandResponse({
+      created: true,
+      room: {
+        _id: 'raw-room-document-id',
+        brokerPostId: 'broker-post-1',
+        carrierPostId: 'carrier-post-1',
+        bookingStatus: 'negotiating',
+      },
+    });
 
     expect(messagesApi.getRooms).toHaveBeenCalledWith({ postId: 'carrier-post-1' });
     expect(component.selectedRoomId).toBe('broker-post-1');

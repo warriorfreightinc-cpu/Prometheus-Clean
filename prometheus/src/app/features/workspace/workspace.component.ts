@@ -2555,6 +2555,10 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   private handleMatchingConsoleCommand(prompt: string): boolean {
     const normalized = prompt.toLowerCase();
 
+    if (this.isBrainBookingApprovalCommand(normalized)) {
+      return false;
+    }
+
     if (this.isHazmatAssistantCommand(normalized)) {
       this.sendMatchingAssistantCommand(prompt);
       return true;
@@ -2944,8 +2948,13 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   private isHazmatAssistantCommand(prompt: string): boolean {
     return /^show\s+matches\b/.test(prompt)
       || /^ask(?:\s+about)?\s+\d+\b/.test(prompt)
-      || /^book(?:\s+(?:option|match))?\s+\d+\b/.test(prompt)
       || /^(?:accept|reject)\s+(?:option|match)\s+\d+\b/.test(prompt);
+  }
+
+  private isBrainBookingApprovalCommand(prompt: string): boolean {
+    if (/\bopen\s+(?:booking|direct)\s+chat\b/.test(prompt)) return false;
+    return /^book(?:\s+(?:option|match|room|lane))?\s+\d+\b/.test(prompt)
+      || /\b(?:approve booking|confirm booking|secure load|book it|book this|lets book|let's book)\b/.test(prompt);
   }
 
   private sendMatchingAssistantCommand(prompt: string): void {
@@ -3192,7 +3201,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private parseMatchSelectionCommand(prompt: string): number | null {
-    const match = prompt.match(/(?:open|chat|message|book)\s+(?:match|room|lane)?\s*(\d+)/i);
+    const match = prompt.match(/(?:open|chat|message)\s+(?:match|room|lane)?\s*(\d+)/i);
     if (!match) return null;
     const index = Number(match[1]);
     return Number.isInteger(index) && index > 0 ? index - 1 : null;
