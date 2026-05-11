@@ -271,6 +271,79 @@ export interface PostSearchPayload {
 
 export type MatchSourcePostType = 'carrierPost' | 'brokerPost';
 
+export type PrometheusBrainSource = 'matching' | 'booking' | 'direct' | 'company' | 'loads' | 'admin';
+
+export type PrometheusBrainApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'expired'
+  | 'executed'
+  | 'failed';
+
+export interface PrometheusBrainApproval {
+  _id?: string;
+  companyId: string;
+  requestedBy: string;
+  decidedBy?: string;
+  role: string;
+  actionType: string;
+  label: string;
+  summary: string;
+  riskNote: string;
+  payload: Record<string, unknown>;
+  status: PrometheusBrainApprovalStatus;
+  expiresAt?: string | Date;
+  decisionAt?: string | Date;
+  result?: Record<string, unknown>;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
+
+export interface PrometheusBrainEvent {
+  _id?: string;
+  companyId: string;
+  userId: string;
+  role: string;
+  source: PrometheusBrainSource;
+  type: string;
+  prompt?: string;
+  message?: string;
+  intent?: string;
+  tool?: string;
+  related?: Record<string, string>;
+  payload?: Record<string, unknown>;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
+
+export interface PrometheusBrainPromptRequest {
+  prompt: string;
+  source: PrometheusBrainSource;
+  related?: {
+    sourcePostId?: string;
+    sourcePostType?: MatchSourcePostType;
+    roomId?: string;
+    loadId?: string;
+    companyId?: string;
+  };
+}
+
+export interface PrometheusBrainPromptResponse {
+  answer: string;
+  handled: boolean;
+  intent: string;
+  eventId?: string;
+  approval?: PrometheusBrainApproval;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateBrainSettingsPayload {
+  memoryMode?: 'off' | 'companyManaged' | 'prometheusManaged';
+  auditRetentionDays?: number;
+  allowProviderTools?: boolean;
+}
+
 export type MatchOpportunityTier =
   | 'strictHazmat'
   | 'hazmatNearMatch'
