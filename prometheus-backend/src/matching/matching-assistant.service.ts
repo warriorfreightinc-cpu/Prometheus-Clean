@@ -355,6 +355,10 @@ export class MatchingAssistantService {
       { $set: { status: "approvedForBooking" } },
       { new: true }
     );
+    await this.opportunityModel.updateMany(
+      this.samePostPairFilter(opportunity),
+      { $set: { status: "approvedForBooking" } }
+    );
 
     const event = await this.createEvent({
       companyId: requesterSide.companyId,
@@ -508,6 +512,30 @@ export class MatchingAssistantService {
 
   private roleForPostType(postType: string): "broker" | "carrier" {
     return postType === "carrierPost" ? "carrier" : "broker";
+  }
+
+  private samePostPairFilter(opportunity: any) {
+    const sourcePostType = this.idOf(opportunity.sourcePostType);
+    const sourcePostId = this.idOf(opportunity.sourcePostId);
+    const candidatePostType = this.idOf(opportunity.candidatePostType);
+    const candidatePostId = this.idOf(opportunity.candidatePostId);
+
+    return {
+      $or: [
+        {
+          sourcePostType,
+          sourcePostId,
+          candidatePostType,
+          candidatePostId,
+        },
+        {
+          sourcePostType: candidatePostType,
+          sourcePostId: candidatePostId,
+          candidatePostType: sourcePostType,
+          candidatePostId: sourcePostId,
+        },
+      ],
+    };
   }
 
   private broadcast(userId: string | undefined, event: any): void {

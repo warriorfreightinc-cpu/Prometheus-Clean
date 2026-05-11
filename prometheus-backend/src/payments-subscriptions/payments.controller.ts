@@ -110,8 +110,12 @@ export class PaymentController {
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({ status: 200, type: String })
   async getProducts() {
-    const products = await this.stripeClient.products.list({ active: true, expand: ["data.default_price", "data.default_price.tiers"] })
-    return products.data
+    try {
+      const products = await this.stripeClient.products.list({ active: true, expand: ["data.default_price", "data.default_price.tiers"] })
+      return products.data
+    } catch {
+      return []
+    }
   }
 
 

@@ -9,6 +9,7 @@ describe("MatchingAssistantService", () => {
     find: jest.fn(),
     findById: jest.fn(),
     findByIdAndUpdate: jest.fn(),
+    updateMany: jest.fn(),
   };
   const eventModel: any = {
     create: jest.fn(),
@@ -461,6 +462,42 @@ describe("MatchingAssistantService", () => {
       expect.objectContaining({ type: "matchingAssistantEvent" })
     );
     expect(result).toEqual({ created: true, room: { _id: "room-1" } });
+  });
+
+  it("marks both directional match opportunities approved when booking starts", async () => {
+    opportunityModel.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(brokerSourceOpportunity),
+    });
+    opportunityModel.findByIdAndUpdate.mockResolvedValue({});
+    opportunityModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+    messagesService.createRoom.mockResolvedValue({ created: true, room: { _id: "room-1" } });
+    eventModel.create.mockImplementation(async (event) => ({ ...event, _id: `event-${event.userId}` }));
+
+    await createService().handleAction(
+      "opp-1",
+      "book",
+      { _id: "carrier-user-1", role: "carrier", companyId: "carrier-company-1" }
+    );
+
+    expect(opportunityModel.updateMany).toHaveBeenCalledWith(
+      {
+        $or: [
+          {
+            sourcePostType: "brokerPost",
+            sourcePostId: "broker-post-1",
+            candidatePostType: "carrierPost",
+            candidatePostId: "carrier-post-1",
+          },
+          {
+            sourcePostType: "carrierPost",
+            sourcePostId: "carrier-post-1",
+            candidatePostType: "brokerPost",
+            candidatePostId: "broker-post-1",
+          },
+        ],
+      },
+      { $set: { status: "approvedForBooking" } }
+    );
   });
 
   it("derives booking role from the authorized participant side, not the request role", async () => {

@@ -137,6 +137,12 @@ describe("PaymentController", () => {
     expect(result).toEqual({ sessionUrl: "https://billing.stripe.test/session" });
   });
 
+  it("keeps local setup usable when Stripe product lookup is not configured yet", async () => {
+    stripeClient.products.list.mockRejectedValue(new Error("Invalid API Key provided"));
+
+    await expect(controller().getProducts()).resolves.toEqual([]);
+  });
+
   it("does not open the billing portal before a Stripe customer exists", async () => {
     companyService.get.mockResolvedValue({ subscription: {} });
 

@@ -38,7 +38,7 @@ export class ApiInterceptor implements HttpInterceptor {
 
     return next.handle(nextReq).pipe(
       catchError((error: HttpErrorResponse) => {
-        if ([401, 403, 406].includes(error.status)) {
+        if ([401, 406].includes(error.status)) {
           this.session.clear();
           this.router.navigate(['/sign-in']);
         }
