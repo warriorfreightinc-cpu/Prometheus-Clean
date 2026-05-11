@@ -35,6 +35,47 @@
       </section>
 
       <section class="panel" *ngIf="activeTab === 'companySetup'">
+        <section class="brain-settings-card insight-card insight-card--plan" *ngIf="canManageCompanySetup" [formGroup]="brainSettingsForm">
+          <div>
+            <span class="eyebrow">Prometheus Brain settings</span>
+            <h3>Company memory and tools</h3>
+            <p>
+              Prometheus does not save company memory unless memory is enabled and a human approves the memory.
+              Provider tools stay off unless you allow them for this company.
+            </p>
+          </div>
+
+          <div class="form-grid form-grid--dispatch">
+            <label class="field">
+              <span>Memory mode</span>
+              <select formControlName="memoryMode">
+                <option value="off">Off</option>
+                <option value="companyManaged">Company managed</option>
+                <option value="prometheusManaged">Prometheus managed</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Audit retention days</span>
+              <input type="number" min="1" formControlName="auditRetentionDays" />
+            </label>
+
+            <label class="brain-settings-toggle">
+              <input type="checkbox" formControlName="allowProviderTools" />
+              <span>Allow provider tools</span>
+            </label>
+          </div>
+
+          <div class="message-banner" *ngIf="brainSettingsMessage">{{ brainSettingsMessage }}</div>
+          <div class="message-banner error" *ngIf="brainSettingsError">{{ brainSettingsError }}</div>
+
+          <div class="quick-actions quick-actions--compact">
+            <button class="primary-button" type="button" (click)="saveBrainSettings()" [disabled]="brainSettingsSaving">
+              {{ brainSettingsSaving ? 'Saving...' : 'Save Brain settings' }}
+            </button>
+          </div>
+        </section>
+
         <app-company-setup-console (statusChanged)="handleCompanySetupStatus($event)"></app-company-setup-console>
       </section>
 

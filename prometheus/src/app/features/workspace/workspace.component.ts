@@ -41,6 +41,7 @@ import {
   PrometheusLoadStatus,
   RoomIntegrationChoice,
   RoomIntegrationExecutionResponse,
+  UpdateBrainSettingsPayload,
   UpdateDirectRoomWorkflowPayload,
   WorkspacePost,
 } from '../../shared/types/models';
@@ -271,6 +272,11 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly directConsoleTabs = DIRECT_CONSOLE_TABS;
   readonly driverRoster = DRIVER_ROSTER;
   readonly dispatchForm: FormGroup = this.createDispatchForm();
+  readonly brainSettingsForm: FormGroup = this.fb.group({
+    memoryMode: ['off'],
+    auditRetentionDays: [365, [Validators.required, Validators.min(1)]],
+    allowProviderTools: [false],
+  });
   @ViewChild('dispatchNarrativeInput') dispatchNarrativeInput?: ElementRef<HTMLTextAreaElement>;
   @ViewChild('dispatchThreadRef') dispatchThreadRef?: ElementRef<HTMLDivElement>;
 
@@ -283,6 +289,9 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   chatbbLoading = false;
   dispatchSubmitting = false;
   workspaceError = '';
+  brainSettingsMessage = '';
+  brainSettingsError = '';
+  brainSettingsSaving = false;
   chatbbError = '';
   dispatchError = '';
   dispatchMessage = '';
@@ -382,7 +391,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.user = this.session.currentUser;
     if (this.user) {
       if (this.user.role === 'superadmin') this.activeTab = 'masterOnboarding';
-      if (this.user.role === 'admin') this.activeTab = 'companySetup';
+      else if (this.canManageCompanySetup) this.activeTab = 'companySetup';
       this.loadSavedTemplates();
       this.primeConsoleMessages();
       this.seedDispatchNarrative();
@@ -397,7 +406,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
       if (this.user.role === 'superadmin') this.activeTab = 'masterOnboarding';
-      if (this.user.role === 'admin') this.activeTab = 'companySetup';
+      else if (this.canManageCompanySetup) this.activeTab = 'companySetup';
       this.loadSavedTemplates();
       this.primeConsoleMessages();
       this.seedDispatchNarrative();
@@ -420,11 +429,14 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   get isCarrier(): boolean { return this.user?.role === 'carrier'; }
   get isMasterAccount(): boolean { return this.user?.role === 'superadmin'; }
   get isCompanyAdmin(): boolean { return this.user?.role === 'admin'; }
+  get canManageCompanySetup(): boolean {
+    return ['admin', 'supervisor', 'superadmin'].includes(String(this.user?.role ?? ''));
+  }
   get workspaceTabs(): WorkspaceTabConfig[] {
     if (this.isMasterAccount) {
-      return WORKSPACE_TABS.filter((tab) => tab.id === 'masterOnboarding');
+      return WORKSPACE_TABS.filter((tab) => tab.id === 'masterOnboarding' || tab.id === 'companySetup');
     }
-    if (this.isCompanyAdmin) {
+    if (this.canManageCompanySetup) {
       return WORKSPACE_TABS.filter((tab) => tab.id === 'companySetup');
     }
     return WORKSPACE_TABS.filter((tab) => tab.id !== 'masterOnboarding' && tab.id !== 'companySetup');
@@ -923,6 +935,37 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   handleCompanySetupStatus(status: CompanySetupStatus): void {
     this.adminSetupStatus = status.status;
+  }
+
+  saveBrainSettings(): void {
+    if (!this.canManageCompanySetup) return;
+
+    this.brainSettingsMessage = '';
+    this.brainSettingsError = '';
+
+    if (this.brainSettingsForm.invalid) {
+      this.brainSettingsError = 'Set audit retention to at least 1 day.';
+      return;
+    }
+
+    const settings = this.brainSettingsForm.getRawValue();
+    const payload: UpdateBrainSettingsPayload = {
+      memoryMode: settings.memoryMode ?? 'off',
+      auditRetentionDays: Number(settings.auditRetentionDays ?? 365),
+      allowProviderTools: Boolean(settings.allowProviderTools),
+    };
+
+    this.brainSettingsSaving = true;
+    this.brainApi.updateSettings(payload).pipe(
+      finalize(() => {
+        this.brainSettingsSaving = false;
+      })
+    ).subscribe({
+      next: () => this.addSystemNotice('Brain settings saved.'),
+      error: () => {
+        this.brainSettingsError = 'Brain settings could not be saved right now.';
+      },
+    });
   }
 
   applyDispatchPrompt(prompt: string): void {
@@ -4710,6 +4753,10 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private appendMatchingBubble(sender: 'assistant' | 'user' | 'system', text: string, label = sender === 'assistant' ? 'Prometheus' : 'You'): void {
     this.matchingConsoleMessages = [...this.matchingConsoleMessages, this.createConsoleBubble(sender, text, label)];
+  }
+
+  private addSystemNotice(message: string): void {
+    this.brainSettingsMessage = message;
   }
 
   private resetBrokerInviteForm(): void {

@@ -38,6 +38,7 @@ describe('WorkspaceComponent workspace tabs', () => {
         })),
         approve: jasmine.createSpy('approve').and.returnValue(of({})),
         reject: jasmine.createSpy('reject').and.returnValue(of({})),
+        updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of({})),
       } as any,
       overrides['loadsApi'] ?? {} as any,
       overrides['messagesApi'] ?? {
@@ -73,27 +74,40 @@ describe('WorkspaceComponent workspace tabs', () => {
     lastName: 'User',
   });
 
-  const createFixture = async (): Promise<ComponentFixture<WorkspaceComponent>> => {
+  const createFixture = async (overrides: Record<string, any> = {}): Promise<ComponentFixture<WorkspaceComponent>> => {
     await TestBed.configureTestingModule({
       declarations: [WorkspaceComponent],
       imports: [FormsModule, ReactiveFormsModule],
       providers: [
         FormBuilder,
-        { provide: AuthSessionService, useValue: { currentUser: null, restoreSession: () => of(false) } },
-        { provide: PostsApiService, useValue: {} },
-        { provide: MatchingApiService, useValue: {} },
+        { provide: AuthSessionService, useValue: overrides['session'] ?? { currentUser: null, restoreSession: () => of(false) } },
+        {
+          provide: PostsApiService,
+          useValue: overrides['postsApi'] ?? {
+            getBrokerPosts: () => of([]),
+            getCarrierPosts: () => of([]),
+          },
+        },
+        {
+          provide: MatchingApiService,
+          useValue: overrides['matchingApi'] ?? {
+            listAssistantEvents: () => of([]),
+          },
+        },
         {
           provide: BrainApiService,
-          useValue: {
+          useValue: overrides['brainApi'] ?? {
             sendPrompt: () => of({ handled: true, intent: 'generalTransportation', answer: 'Prometheus Brain is ready.' }),
             approve: () => of({}),
             reject: () => of({}),
+            updateSettings: () => of({}),
           },
         },
-        { provide: LoadsApiService, useValue: {} },
+        { provide: LoadsApiService, useValue: overrides['loadsApi'] ?? { getCompanyLoads: () => of([]) } },
         {
           provide: MessagesApiService,
           useValue: {
+            getNewMessageDot: () => of([]),
             updateBookingWorkflow: () => of({}),
             getRoomIntegrationChoices: () => of({ setup: [], tracking: [] }),
             executeRoomIntegration: (payload: any) => {
@@ -111,7 +125,7 @@ describe('WorkspaceComponent workspace tabs', () => {
             },
           },
         },
-        { provide: ChatbbApiService, useValue: {} },
+        { provide: ChatbbApiService, useValue: overrides['chatbbApi'] ?? { getRuntimeStatus: () => of(null) } },
         { provide: LocationApiService, useValue: {} },
         { provide: DispatchIntakeService, useValue: {} },
         { provide: Router, useValue: { navigate: jasmine.createSpy('navigate') } },
@@ -142,6 +156,52 @@ describe('WorkspaceComponent workspace tabs', () => {
     component.user = userWithRole('admin');
 
     expect(component.workspaceTabs.map((tab) => tab.id)).toEqual(['companySetup']);
+  });
+
+  it('shows Brain settings to company admins and saves changes', async () => {
+    const brainApi = {
+      sendPrompt: () => of({ handled: true, intent: 'generalTransportation', answer: 'Prometheus Brain is ready.' }),
+      approve: () => of({}),
+      reject: () => of({}),
+      updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of({})),
+    };
+    const adminUser = userWithRole('admin');
+    const fixture = await createFixture({
+      brainApi,
+      session: { currentUser: adminUser, restoreSession: () => of(true) },
+    });
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Prometheus Brain settings');
+    expect(fixture.nativeElement.textContent).toContain('Prometheus does not save company memory unless memory is enabled and a human approves the memory.');
+
+    component.brainSettingsForm.patchValue({
+      memoryMode: 'companyManaged',
+      auditRetentionDays: 90,
+      allowProviderTools: true,
+    });
+    fixture.detectChanges();
+    const saveButton = fixture.nativeElement.querySelector('.brain-settings-card button') as HTMLButtonElement;
+    saveButton.click();
+
+    expect(brainApi.updateSettings).toHaveBeenCalledWith({
+      memoryMode: 'companyManaged',
+      auditRetentionDays: 90,
+      allowProviderTools: true,
+    });
+    expect(component.brainSettingsMessage).toBe('Brain settings saved.');
+  });
+
+  it('does not show Brain settings to carrier dispatcher desks', async () => {
+    const carrierUser = userWithRole('carrier');
+    const fixture = await createFixture({
+      session: { currentUser: carrierUser, restoreSession: () => of(true) },
+    });
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Prometheus Brain settings');
   });
 
   it('keeps the existing Booking Chat button labels unchanged', async () => {
