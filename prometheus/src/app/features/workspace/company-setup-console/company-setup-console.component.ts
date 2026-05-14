@@ -6,6 +6,9 @@ import {
   CompanyIntegrationCategory,
   CompanyIntegrationRecord,
   CompanyIntegrationStatus,
+  ProviderCatalog,
+  ProviderCatalogItem,
+  ProviderCatalogStatus,
   CompanySetupStatus,
   CompanyUser,
   CreateCompanyUserPayload,
@@ -69,6 +72,7 @@ export class CompanySetupConsoleComponent implements OnInit {
   users: CompanyUser[] = [];
   products: StripeProductOption[] = [];
   integrations: CompanyIntegrationRecord[] = [];
+  providerCatalogItems: ProviderCatalogItem[] = [];
   selectedPriceId = '';
   selectedIntegrationId = '';
   quantity = 1;
@@ -146,12 +150,14 @@ export class CompanySetupConsoleComponent implements OnInit {
       users: this.companyApi.getCompanyUsers().pipe(catchError(() => of([] as CompanyUser[]))),
       products: this.companyApi.getSubscriptionProducts().pipe(catchError(() => of([] as StripeProductOption[]))),
       integrations: this.companyApi.getCompanyIntegrations().pipe(catchError(() => of([] as CompanyIntegrationRecord[]))),
+      providerCatalog: this.companyApi.getProviderCatalog().pipe(catchError(() => of({ platform: [], company: [] } as ProviderCatalog))),
     }).pipe(finalize(() => (this.loading = false))).subscribe({
-      next: ({ setup, users, products, integrations }) => {
+      next: ({ setup, users, products, integrations, providerCatalog }) => {
         this.setupStatus = setup;
         this.users = users ?? [];
         this.products = products ?? [];
         this.integrations = integrations ?? [];
+        this.providerCatalogItems = [...(providerCatalog?.platform ?? []), ...(providerCatalog?.company ?? [])];
         this.quantity = setup.paidSeats || setup.requestedSeats || 1;
         this.selectedPriceId = this.products[0]?.default_price?.id || '';
         this.statusChanged.emit(setup);
@@ -251,6 +257,25 @@ export class CompanySetupConsoleComponent implements OnInit {
 
   statusClass(status: CompanyIntegrationStatus): string {
     return `status-chip status-chip--${status.replace('_', '-')}`;
+  }
+
+  providerStatusLabel(status: ProviderCatalogStatus): string {
+    const labels: Record<ProviderCatalogStatus, string> = {
+      ready: 'Ready',
+      needs_credentials: 'Needs credentials',
+      requires_credentials: 'Requires credentials',
+      requires_contract: 'Requires contract',
+      manual: 'Manual',
+    };
+    return labels[status];
+  }
+
+  providerStatusClass(status: ProviderCatalogStatus): string {
+    return `status-chip status-chip--provider-${status.replace('_', '-')}`;
+  }
+
+  providerCatalogId(index: number, item: ProviderCatalogItem): string {
+    return `${item.category}:${item.provider}:${index}`;
   }
 
   startPayment(): void {

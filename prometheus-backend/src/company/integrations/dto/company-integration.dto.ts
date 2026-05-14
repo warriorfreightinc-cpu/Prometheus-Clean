@@ -1,5 +1,8 @@
 export type CompanyIntegrationCategory = "setup" | "tracking" | "eld";
 export type CompanyIntegrationStatus = "not_connected" | "connected" | "needs_attention" | "disabled";
+export type ProviderCatalogCategory = "platform" | "setup" | "tracking" | "eld" | "loadboard" | "tms" | "storage";
+export type ProviderCatalogStatus = "ready" | "needs_credentials" | "requires_credentials" | "requires_contract" | "manual";
+export type ProviderCatalogFreeTier = "free" | "paid" | "contract" | "local";
 export type RoomIntegrationChoiceCategory = CompanyIntegrationCategory | "manual";
 export type RoomIntegrationChoiceSource = "broker" | "carrier" | "manual";
 export type RoomIntegrationExecutionStatus = "staged" | "unavailable";
@@ -57,6 +60,22 @@ export interface CompanyIntegrationResponseDTO {
   updatedBy?: string;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface ProviderCatalogItemDTO {
+  category: ProviderCatalogCategory;
+  provider: string;
+  label: string;
+  status: ProviderCatalogStatus;
+  freeTier: ProviderCatalogFreeTier;
+  environmentKeys?: string[];
+  requestFrom?: string;
+  notes: string;
+}
+
+export interface ProviderCatalogDTO {
+  platform: ProviderCatalogItemDTO[];
+  company: ProviderCatalogItemDTO[];
 }
 
 export interface RoomIntegrationChoiceDTO {

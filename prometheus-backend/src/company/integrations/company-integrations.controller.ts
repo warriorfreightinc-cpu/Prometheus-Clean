@@ -14,6 +14,13 @@ import {
 export class CompanyIntegrationsController {
   constructor(private readonly service: CompanyIntegrationsService) {}
 
+  @Get("providers")
+  @Roles("admin", "supervisor")
+  @HttpCode(HttpStatus.OK)
+  providers() {
+    return this.service.listProviderCatalog();
+  }
+
   @Get("room")
   @Roles("carrier", "broker", "admin", "manager", "supervisor")
   @HttpCode(HttpStatus.OK)

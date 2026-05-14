@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { CompanyApiService } from '../../../core/api/company-api.service';
 import {
   CompanyIntegrationRecord,
+  ProviderCatalog,
   CompanySetupStatus,
   CompanyUser,
   StripeProductOption,
@@ -76,6 +77,29 @@ describe('CompanySetupConsoleComponent', () => {
       enabled: false,
     },
   ];
+  const providerCatalog: ProviderCatalog = {
+    platform: [
+      {
+        category: 'platform',
+        provider: 'google_maps',
+        label: 'Google Maps routing',
+        status: 'needs_credentials',
+        freeTier: 'paid',
+        environmentKeys: ['AgmCoreModule', 'GOOGLE_MAPS_API_KEY'],
+        notes: 'Route maps and mileage.',
+      },
+    ],
+    company: [
+      {
+        category: 'loadboard',
+        provider: 'dat',
+        label: 'DAT',
+        status: 'requires_contract',
+        freeTier: 'contract',
+        notes: 'Load board and rates.',
+      },
+    ],
+  };
 
   beforeEach(async () => {
     companyApi = jasmine.createSpyObj<CompanyApiService>('CompanyApiService', [
@@ -87,6 +111,7 @@ describe('CompanySetupConsoleComponent', () => {
       'localActivateCompany',
       'createCompanyUser',
       'getCompanyIntegrations',
+      'getProviderCatalog',
       'upsertCompanyIntegration',
       'updateCompanyIntegration',
       'disableCompanyIntegration',
@@ -95,6 +120,7 @@ describe('CompanySetupConsoleComponent', () => {
     companyApi.getCompanyUsers.and.returnValue(of([] as CompanyUser[]));
     companyApi.getSubscriptionProducts.and.returnValue(of([] as StripeProductOption[]));
     companyApi.getCompanyIntegrations.and.returnValue(of(integrations));
+    companyApi.getProviderCatalog.and.returnValue(of(providerCatalog));
     companyApi.getBillingPortalSession.and.returnValue(of({ sessionUrl: 'https://billing.stripe.test/session' }));
     companyApi.upsertCompanyIntegration.and.returnValue(of(integrations[0]));
     companyApi.updateCompanyIntegration.and.returnValue(of(integrations[0]));
@@ -123,6 +149,18 @@ describe('CompanySetupConsoleComponent', () => {
     expect(text).toContain('Connected');
     expect(text).toContain('Needs attention');
     expect(text).toContain('Disabled');
+  });
+
+  it('renders provider catalog readiness from the backend', () => {
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(companyApi.getProviderCatalog).toHaveBeenCalled();
+    expect(text).toContain('Provider catalog');
+    expect(text).toContain('Google Maps routing');
+    expect(text).toContain('Needs credentials');
+    expect(text).toContain('DAT');
+    expect(text).toContain('Requires contract');
   });
 
   it('calls the upsert integration API from the add provider form', () => {

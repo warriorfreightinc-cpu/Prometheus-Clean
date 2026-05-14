@@ -12,9 +12,12 @@ describe("CompanyIntegrationsService", () => {
   const carrierPostModel: any = {
     findById: jest.fn()
   };
+  const configService: any = {
+    get: jest.fn()
+  };
 
   function service() {
-    return new CompanyIntegrationsService(companyModel, brokerPostModel, carrierPostModel);
+    return new CompanyIntegrationsService(companyModel, brokerPostModel, carrierPostModel, configService);
   }
 
   function companyDoc(overrides: any = {}) {
@@ -34,6 +37,66 @@ describe("CompanyIntegrationsService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    configService.get.mockImplementation((key: string) => {
+      const values: Record<string, string> = {
+        FMCSA_AUTHORITY_VALIDATION: "datahub",
+        STRIPE_API_KEY: "sk_test_live_enough",
+        MAIL_HOST: "127.0.0.1",
+        OPENAI_BASE_URL: "http://127.0.0.1:1234/v1",
+        OPENAI_API_KEY: "lm-studio",
+        AgmCoreModule: ""
+      };
+      return values[key];
+    });
+  });
+
+  it("returns provider catalog with configured platform readiness and contracted trucking providers", () => {
+    const result = service().listProviderCatalog();
+
+    expect(result.platform).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "fmcsa",
+          label: "FMCSA authority data",
+          status: "ready",
+          freeTier: "free"
+        }),
+        expect.objectContaining({
+          provider: "stripe",
+          status: "ready",
+          freeTier: "paid"
+        }),
+        expect.objectContaining({
+          provider: "google_maps",
+          status: "needs_credentials",
+          environmentKeys: expect.arrayContaining(["AgmCoreModule", "GOOGLE_MAPS_API_KEY"])
+        })
+      ])
+    );
+    expect(result.company).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "setup",
+          provider: "highway",
+          status: "requires_contract"
+        }),
+        expect.objectContaining({
+          category: "tracking",
+          provider: "macropoint",
+          status: "requires_contract"
+        }),
+        expect.objectContaining({
+          category: "eld",
+          provider: "samsara",
+          status: "requires_credentials"
+        }),
+        expect.objectContaining({
+          category: "loadboard",
+          provider: "dat",
+          status: "requires_contract"
+        })
+      ])
+    );
   });
 
   it("allows an admin to upsert a connected setup provider for their company", async () => {
@@ -334,6 +397,53 @@ describe("CompanyIntegrationsService", () => {
     );
     expect(result.message).toContain("MacroPoint tracking is staged");
     expect(result.message).toContain("Company Integrations");
+  });
+
+  it("does not call a connected tracking provider live until credential metadata exists", async () => {
+    brokerPostModel.findById.mockReturnValue(leanResult({ _id: "broker-post-1", companyId: "broker-company-1" }));
+    carrierPostModel.findById.mockReturnValue(leanResult({ _id: "carrier-post-1", companyId: "carrier-company-1" }));
+    companyModel.find.mockReturnValue(
+      leanResult([
+        {
+          _id: "broker-company-1",
+          integrations: [
+            {
+              _id: "integration-1",
+              companyId: "broker-company-1",
+              category: "tracking",
+              provider: "macropoint",
+              label: "MacroPoint",
+              status: "connected",
+              enabled: true
+            }
+          ]
+        },
+        { _id: "carrier-company-1", integrations: [] }
+      ])
+    );
+
+    const result = await service().executeRoomIntegration(
+      {
+        brokerPostId: "broker-post-1",
+        carrierPostId: "carrier-post-1",
+        category: "tracking",
+        provider: "macropoint",
+        source: "broker"
+      },
+      roomUser
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "staged",
+        mode: "placeholder",
+        provider: "macropoint",
+        label: "Broker MacroPoint",
+        category: "tracking",
+        source: "broker"
+      })
+    );
+    expect(result.message).toContain("Add live credentials");
   });
 
   it("keeps carrier-side labels when executing a carrier ELD provider without subdocument companyId", async () => {

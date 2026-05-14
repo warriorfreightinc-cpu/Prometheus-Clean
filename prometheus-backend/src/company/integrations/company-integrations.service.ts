@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import { PostBroker } from "src/post-broker/interface/post.interface";
@@ -6,6 +7,8 @@ import { PostCarrier } from "src/post-carrier/interface/post.interface";
 import { Company, CompanyIntegration } from "../interface/company.interface";
 import {
   CompanyIntegrationCategory,
+  ProviderCatalogDTO,
+  ProviderCatalogItemDTO,
   CompanyIntegrationResponseDTO,
   CompanyIntegrationStatus,
   ExecuteRoomIntegrationDTO,
@@ -24,8 +27,36 @@ export class CompanyIntegrationsService {
   constructor(
     @InjectModel("Company") private readonly companyModel: Model<Company>,
     @InjectModel("brokerPost") private readonly brokerPostModel: Model<PostBroker>,
-    @InjectModel("carrierPost") private readonly carrierPostModel: Model<PostCarrier>
+    @InjectModel("carrierPost") private readonly carrierPostModel: Model<PostCarrier>,
+    @Optional() private readonly configService?: ConfigService
   ) {}
+
+  listProviderCatalog(): ProviderCatalogDTO {
+    return {
+      platform: [
+        this.platformProvider("fmcsa", "FMCSA authority data", "free", ["FMCSA_AUTHORITY_VALIDATION"], this.fmcsaStatus(), "DOT/MC authority checks during signup."),
+        this.platformProvider("stripe", "Stripe payments", "paid", ["STRIPE_API_KEY", "STRIPE_WEBHOOKS_KEY"], this.envStatus(["STRIPE_API_KEY"], "sk_test_local_placeholder"), "Company subscriptions, plan validation, and payment setup."),
+        this.platformProvider("smtp", "Email delivery", "paid", ["MAIL_HOST", "MAIL_USER", "MAIL_PASSWORD"], this.envStatus(["MAIL_HOST"]), "Setup approval emails, company invites, and Brain-approved outbound email."),
+        this.platformProvider("openai", "AI model gateway", "local", ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"], this.envStatus(["OPENAI_BASE_URL", "OPENAI_API_KEY"], "lm-studio"), "Prometheus Brain can use local LM Studio now or cloud OpenAI later."),
+        this.platformProvider("google_maps", "Google Maps routing", "paid", ["AgmCoreModule", "GOOGLE_MAPS_API_KEY"], this.anyEnvStatus(["AgmCoreModule", "GOOGLE_MAPS_API_KEY"]), "Route maps, deadhead miles, loaded miles, and later route-risk checks."),
+        this.platformProvider("file_storage", "Document storage", "paid", ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY"], this.envStatus(["S3_ENDPOINT", "S3_BUCKET"]), "Authority files, insurance certificates, setup packets, and accessorial documents.")
+      ],
+      company: [
+        this.companyProvider("setup", "highway", "Highway", "requires_contract", "contract", "Highway broker/carrier identity and compliance setup. Requires provider agreement and API credentials."),
+        this.companyProvider("setup", "mycarrierpacket", "MyCarrierPackets", "requires_contract", "contract", "Broker setup packet workflow. Requires account/API access."),
+        this.companyProvider("setup", "truckstop", "Truckstop setup", "requires_contract", "contract", "Truckstop setup and carrier network tools. Requires account/API access."),
+        this.companyProvider("tracking", "macropoint", "MacroPoint", "requires_contract", "contract", "Broker-side live tracking. Requires MacroPoint/Descartes customer credentials."),
+        this.companyProvider("tracking", "fourkites", "FourKites", "requires_contract", "contract", "Shipment visibility and exception tracking. Requires FourKites API access."),
+        this.companyProvider("tracking", "tql", "TQL tracking", "requires_contract", "contract", "TQL visibility/tracking integration. Requires TQL integration access."),
+        this.companyProvider("eld", "samsara", "Samsara ELD", "requires_credentials", "paid", "Carrier ELD/GPS/HOS source. Requires customer API token."),
+        this.companyProvider("eld", "motive", "Motive ELD", "requires_credentials", "paid", "Carrier ELD/GPS/HOS source. Requires API/OAuth access."),
+        this.companyProvider("eld", "geotab", "Geotab ELD", "requires_credentials", "paid", "Carrier ELD/GPS/HOS source. Requires MyGeotab API account."),
+        this.companyProvider("loadboard", "dat", "DAT", "requires_contract", "contract", "Load/truck board and rates. Requires DAT developer/API access."),
+        this.companyProvider("loadboard", "truckstop", "Truckstop load board", "requires_contract", "contract", "Truckstop load/truck search and booking tools. Requires API access."),
+        this.companyProvider("tms", "ch_robinson", "C.H. Robinson/Navisphere", "requires_contract", "contract", "Contracted carrier/broker load feed. Requires CH Robinson API connectivity.")
+      ]
+    };
+  }
 
   async listIntegrations(companyId: string): Promise<CompanyIntegrationResponseDTO[]> {
     const company = await this.findCompanyLean(companyId);
@@ -148,7 +179,7 @@ export class CompanyIntegrationsService {
     const label = integration
       ? this.withSourcePrefix(integration.label, integrationSource === "carrier" ? "Carrier" : "Broker")
       : this.optionalTrim(body.label) ?? this.providerDisplayLabel(provider);
-    const mode = provider === "manual" || category === "manual" ? "manual" : integration ? "configured" : "placeholder";
+    const mode = this.executionModeFor(category, provider, integration);
 
     return {
       status: "staged",
@@ -381,6 +412,30 @@ export class CompanyIntegrationsService {
       .join(" ");
   }
 
+  private executionModeFor(
+    category: RoomIntegrationChoiceCategory,
+    provider: string,
+    integration: CompanyIntegration | null
+  ): "configured" | "placeholder" | "manual" {
+    if (provider === "manual" || category === "manual") {
+      return "manual";
+    }
+
+    if (!integration) {
+      return "placeholder";
+    }
+
+    if (category === "setup") {
+      return integration.setupUrl || integration.credentialRef ? "configured" : "placeholder";
+    }
+
+    if (category === "tracking" || category === "eld") {
+      return integration.credentialRef ? "configured" : "placeholder";
+    }
+
+    return "placeholder";
+  }
+
   private executionMessage(
     category: RoomIntegrationChoiceCategory,
     label: string,
@@ -424,6 +479,63 @@ export class CompanyIntegrationsService {
 
   private normalizeProvider(provider: string): string {
     return provider.trim().toLowerCase();
+  }
+
+  private platformProvider(
+    provider: string,
+    label: string,
+    freeTier: ProviderCatalogItemDTO["freeTier"],
+    environmentKeys: string[],
+    status: ProviderCatalogItemDTO["status"],
+    notes: string
+  ): ProviderCatalogItemDTO {
+    return {
+      category: "platform",
+      provider,
+      label,
+      status,
+      freeTier,
+      environmentKeys,
+      notes
+    };
+  }
+
+  private companyProvider(
+    category: ProviderCatalogItemDTO["category"],
+    provider: string,
+    label: string,
+    status: ProviderCatalogItemDTO["status"],
+    freeTier: ProviderCatalogItemDTO["freeTier"],
+    notes: string
+  ): ProviderCatalogItemDTO {
+    return {
+      category,
+      provider,
+      label,
+      status,
+      freeTier,
+      notes
+    };
+  }
+
+  private fmcsaStatus(): ProviderCatalogItemDTO["status"] {
+    return this.configService?.get<string>("FMCSA_AUTHORITY_VALIDATION") === "off" ? "manual" : "ready";
+  }
+
+  private envStatus(keys: string[], placeholder?: string): ProviderCatalogItemDTO["status"] {
+    return keys.every((key) => this.envValue(key, placeholder)) ? "ready" : "needs_credentials";
+  }
+
+  private anyEnvStatus(keys: string[]): ProviderCatalogItemDTO["status"] {
+    return keys.some((key) => this.envValue(key)) ? "ready" : "needs_credentials";
+  }
+
+  private envValue(key: string, placeholder?: string): string | undefined {
+    const value = this.configService?.get<string>(key)?.trim();
+    if (!value || (placeholder && value === placeholder)) {
+      return undefined;
+    }
+    return value;
   }
 
   private optionalTrim(value?: string): string | undefined {

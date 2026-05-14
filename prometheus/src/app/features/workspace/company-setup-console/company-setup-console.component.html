@@ -95,6 +95,24 @@
       </div>
     </form>
 
+    <section class="provider-catalog" *ngIf="providerCatalogItems.length">
+      <header>
+        <div>
+          <h4>Provider catalog</h4>
+          <p>Configured platform tools and provider access still needed for live integrations.</p>
+        </div>
+      </header>
+      <div class="provider-catalog__grid">
+        <article *ngFor="let provider of providerCatalogItems; trackBy: providerCatalogId">
+          <div>
+            <strong>{{ provider.label }}</strong>
+            <span>{{ provider.category }} | {{ provider.freeTier }}</span>
+          </div>
+          <em [class]="providerStatusClass(provider.status)">{{ providerStatusLabel(provider.status) }}</em>
+        </article>
+      </div>
+    </section>
+
     <div class="integration-groups">
       <section class="integration-group" *ngFor="let group of integrationGroups">
         <header>

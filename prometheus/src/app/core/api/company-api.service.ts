@@ -5,6 +5,7 @@ import {
   CompanyDraft,
   CompanyIntegrationRecord,
   CompanyOnboardingRecord,
+  ProviderCatalog,
   CompanySetupStatus,
   CompanyUser,
   CreateCompanyUserPayload,
@@ -119,6 +120,10 @@ export class CompanyApiService {
 
   getCompanyIntegrations(): Observable<CompanyIntegrationRecord[]> {
     return this.http.get<CompanyIntegrationRecord[]>('company/integrations');
+  }
+
+  getProviderCatalog(): Observable<ProviderCatalog> {
+    return this.http.get<ProviderCatalog>('company/integrations/providers');
   }
 
   upsertCompanyIntegration(payload: UpsertCompanyIntegrationPayload): Observable<CompanyIntegrationRecord> {
