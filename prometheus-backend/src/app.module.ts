@@ -23,6 +23,7 @@ import { MatchingModule } from "./matching/matching.module";
 import { MessagesModule } from "./messages/messages.module";
 import { PostBrokerModule } from "./post-broker/post.module";
 import { PostCarrierModule } from "./post-carrier/post.module";
+import { RoutingModule } from "./routing/routing.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -55,6 +56,7 @@ import { PostCarrierModule } from "./post-carrier/post.module";
     MessagesModule,
     LoadsModule,
     MatchingModule,
+    RoutingModule,
     BrainModule,
     ThrottlerModule.forRoot([
       {
