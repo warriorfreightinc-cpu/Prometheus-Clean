@@ -68,6 +68,16 @@ export class AiMatchingConsoleComponent implements AfterViewChecked {
     return formatChatTimeLabel(value, now);
   }
 
+  speakerLabel(sender: ConsoleBubble['sender'] | ChatbbThreadMessage['sender']): string {
+    if (sender === 'user') {
+      return 'You';
+    }
+    if (sender === 'system') {
+      return 'System';
+    }
+    return 'Prometheus';
+  }
+
   private currentMessageKey(): string {
     const matchingTail = this.matchingConsoleMessages.at(-1);
     const chatTail = this.chatbbMessages.at(-1);

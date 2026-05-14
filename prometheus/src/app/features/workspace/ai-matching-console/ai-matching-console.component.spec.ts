@@ -80,4 +80,43 @@ describe('AiMatchingConsoleComponent time labels', () => {
 
     expect(scrollSpy).toHaveBeenCalled();
   });
+
+  it('does not render internal console labels in the assistant conversation', async () => {
+    await TestBed.configureTestingModule({
+      declarations: [AiMatchingConsoleComponent],
+      imports: [FormsModule],
+    }).compileComponents();
+    const fixture: ComponentFixture<AiMatchingConsoleComponent> = TestBed.createComponent(AiMatchingConsoleComponent);
+    const component = fixture.componentInstance;
+
+    component.matchingConsoleMessages = [
+      { id: 'm-1', sender: 'assistant', label: 'Prometheus', text: 'I found 2 hazmat options.' },
+      { id: 'm-2', sender: 'user', label: 'You', text: 'Show me the best one.' },
+    ];
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    expect(text).not.toContain('console input');
+    expect(text).not.toContain('console command');
+  });
+
+  it('marks user and assistant lines with distinct speaker chips', async () => {
+    await TestBed.configureTestingModule({
+      declarations: [AiMatchingConsoleComponent],
+      imports: [FormsModule],
+    }).compileComponents();
+    const fixture: ComponentFixture<AiMatchingConsoleComponent> = TestBed.createComponent(AiMatchingConsoleComponent);
+    const component = fixture.componentInstance;
+
+    component.chatbbMessages = [
+      { sender: 'assistant', text: 'Good morning. I am watching the board.', createdAt: new Date().toISOString() },
+      { sender: 'user', text: 'Find Nate a Chicago hazmat load.', createdAt: new Date().toISOString() },
+    ];
+    fixture.detectChanges();
+
+    const assistantChip = fixture.nativeElement.querySelector('.speaker-chip--assistant');
+    const userChip = fixture.nativeElement.querySelector('.speaker-chip--user');
+    expect(assistantChip?.textContent).toContain('Prometheus');
+    expect(userChip?.textContent).toContain('You');
+  });
 });

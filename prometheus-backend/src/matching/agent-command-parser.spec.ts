@@ -55,6 +55,14 @@ describe("parseAgentCommand", () => {
     });
   });
 
+  it("does not treat hazmat as part of the city name", () => {
+    expect(parseAgentCommand("find me a load from chicago hazmat")).toMatchObject({
+      intent: "search",
+      originCity: "Chicago",
+      originState: "",
+    });
+  });
+
   it("parses show more", () => {
     expect(parseAgentCommand("show me more")).toMatchObject({
       intent: "showMore",

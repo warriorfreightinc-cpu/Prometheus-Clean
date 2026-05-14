@@ -18,7 +18,7 @@ const BOOKING_COMMAND = /\b(book|ask about|ask|accept|reject)\s+(option|match)?\
 const AGE_PATTERN = /\b(?:last|past)\s+(\d{1,3})\s*(?:h|hr|hrs|hour|hours)\b/i;
 const WEIGHT_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*\$?\s*((?:\d{2,3},\d{3})|\d{4,6})\s*(?:lb|lbs|pounds)?\b/i;
 const LENGTH_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*(\d{1,2})\s*(?:ft|feet|foot)\b/i;
-const LOCATION_PATTERN = /\b(?:out of|around|near|in|from)\s+(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|loads?|trucks?|shipments?|partials?|partial|full|map)\b|$)/i;
+const LOCATION_PATTERN = /\b(?:out of|around|near|in|from)\s+(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map)\b|$)/i;
 const IN_CITY_STATE_PATTERN = /\bin\s+([a-zA-Z .'-]+?)(?:,\s*|\s+)([A-Z]{2})\b/i;
 const STATE_PATTERN = /^(.+?)(?:,\s*|\s+)([A-Z]{2})$/i;
 
@@ -103,7 +103,7 @@ function parseLocation(text: string): { city: string; state: string } {
 
 function cleanLocation(value: string | undefined): string {
   return String(value ?? "")
-    .replace(/\b(my|the|your|truck|loads?|shipments?)\b/gi, "")
+    .replace(/\b(my|the|your|truck|hazmat|loads?|shipments?)\b/gi, "")
     .replace(/[?.!,]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();

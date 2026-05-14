@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import OpenAI from "openai";
 import { AgentCommandService } from "../matching/agent-command.service";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
@@ -10,6 +11,16 @@ import {
   parsePrometheusBrainPrompt,
   PrometheusBrainIntent,
 } from "./prometheus-brain-parser";
+
+const nodeFetch: any = require("node-fetch");
+
+type BrainAiRuntimeConfig = {
+  mode: "openai" | "local";
+  providerLabel: string;
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+};
 
 @Injectable()
 export class PrometheusBrainService {
@@ -130,7 +141,12 @@ export class PrometheusBrainService {
       };
     }
 
-    const answer = this.renderKnowledgeAnswer(parsed.intent, prompt);
+    const aiAnswer = await this.tryGenerateBrainAnswer(parsed.intent, prompt, {
+      role,
+      source,
+      related: data.related,
+    });
+    const answer = aiAnswer ?? this.renderKnowledgeAnswer(parsed.intent, prompt);
     const event = await this.events.record({
       companyId,
       userId,
@@ -139,7 +155,7 @@ export class PrometheusBrainService {
       type: "suggestionShown",
       prompt,
       intent: parsed.intent,
-      tool: "deterministicTransportationAnswer",
+      tool: aiAnswer ? "transportationAiRuntime" : "deterministicTransportationAnswer",
       message: answer,
     });
 
@@ -149,6 +165,150 @@ export class PrometheusBrainService {
       answer,
       eventId: String(event?._id ?? ""),
     };
+  }
+
+  private getAiRuntimeConfig(): BrainAiRuntimeConfig | null {
+    if (process.env.NODE_ENV === "test") {
+      return null;
+    }
+
+    const baseURL = process.env.OPENAI_BASE_URL?.trim();
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    const configuredModel = process.env.OPENAI_MODEL?.trim();
+
+    if (baseURL) {
+      return {
+        mode: "local",
+        providerLabel: "Local OpenAI-compatible server",
+        apiKey: apiKey || "lm-studio",
+        model: configuredModel || "prometheus-local",
+        baseURL,
+      };
+    }
+
+    if (apiKey) {
+      return {
+        mode: "openai",
+        providerLabel: "OpenAI",
+        apiKey,
+        model: configuredModel || "gpt-5.4-mini",
+      };
+    }
+
+    return null;
+  }
+
+  private async tryGenerateBrainAnswer(
+    intent: PrometheusBrainIntent,
+    prompt: string,
+    context: { role: string; source: PrometheusBrainSource; related?: Record<string, string> }
+  ): Promise<string | null> {
+    const runtime = this.getAiRuntimeConfig();
+    if (!runtime) {
+      return null;
+    }
+
+    try {
+      return runtime.mode === "local"
+        ? await this.generateLocalBrainAnswer(runtime, intent, prompt, context)
+        : await this.generateOpenAiBrainAnswer(runtime, intent, prompt, context);
+    } catch {
+      return null;
+    }
+  }
+
+  private buildBrainSystemPrompt() {
+    return [
+      "You are Prometheus, a hazmat transportation assistant for U.S. brokers, carriers, dispatchers, and company admins.",
+      "Sound like a calm dispatcher assistant, not a terminal or generic chatbot.",
+      "Help with hazmat matching, equipment fit, pickup timing, route context, rate thinking, driver risk, written-trail decisions, and next-step suggestions.",
+      "Do not execute booking, email, chat, setup, tracking, dispatch, or compliance actions without human approval.",
+      "Do not invent live loads, trucks, tracking, ELD status, broker availability, rates, FMCSA facts, or legal conclusions.",
+      "If the user asks for live board data that is not in context, say what Prometheus can check and what details you need.",
+      "For hazmat compliance questions, give practical review points and tell the user to verify against current DOT, PHMSA, company policy, and shipment paperwork.",
+      "Keep answers concise and useful for an active operations desk.",
+    ].join(" ");
+  }
+
+  private buildBrainUserPayload(intent: PrometheusBrainIntent, prompt: string, context: Record<string, unknown>) {
+    return JSON.stringify({
+      intent,
+      prompt,
+      context,
+      guardrails: [
+        "Human approves every external action.",
+        "Use Prometheus tools for live search and booking state.",
+        "Never claim a live match exists unless it is supplied by the system context.",
+      ],
+    });
+  }
+
+  private async generateLocalBrainAnswer(
+    runtime: BrainAiRuntimeConfig,
+    intent: PrometheusBrainIntent,
+    prompt: string,
+    context: Record<string, unknown>
+  ) {
+    const client = new OpenAI({
+      apiKey: runtime.apiKey,
+      baseURL: runtime.baseURL,
+      fetch: nodeFetch,
+      timeout: 45000,
+    });
+
+    const response = await client.chat.completions.create({
+      model: runtime.model,
+      temperature: 0.35,
+      messages: [
+        { role: "system", content: this.buildBrainSystemPrompt() },
+        { role: "user", content: this.buildBrainUserPayload(intent, prompt, context) },
+      ],
+    });
+
+    return response.choices?.[0]?.message?.content?.trim() || null;
+  }
+
+  private async generateOpenAiBrainAnswer(
+    runtime: BrainAiRuntimeConfig,
+    intent: PrometheusBrainIntent,
+    prompt: string,
+    context: Record<string, unknown>
+  ) {
+    const client = new OpenAI({
+      apiKey: runtime.apiKey,
+      fetch: nodeFetch,
+      timeout: 30000,
+    });
+
+    const response = await client.responses.create({
+      model: runtime.model,
+      store: false,
+      temperature: 0.35,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: this.buildBrainSystemPrompt() }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: this.buildBrainUserPayload(intent, prompt, context) }],
+        },
+      ],
+      text: { verbosity: "medium" },
+    });
+
+    return response.output_text?.trim() || this.extractResponseOutputText(response)?.trim() || null;
+  }
+
+  private extractResponseOutputText(response: any) {
+    for (const item of response?.output ?? []) {
+      for (const entry of item?.content ?? []) {
+        if (entry?.type === "output_text" && entry?.text) {
+          return entry.text;
+        }
+      }
+    }
+    return null;
   }
 
   private async handleSearchIntent(

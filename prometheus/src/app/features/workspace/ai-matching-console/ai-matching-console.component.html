@@ -7,11 +7,15 @@
         [class.chat-bubble--user]="bubble.sender === 'user'"
       >
         <div class="chat-bubble__meta">
-          <strong>{{ bubble.label }}</strong>
-          <span *ngIf="bubble.createdAt; else bubbleKind">{{ formatTimestamp(bubble.createdAt) }}</span>
-          <ng-template #bubbleKind>
-            <span>{{ bubble.sender === 'user' ? 'console input' : 'console command' }}</span>
-          </ng-template>
+          <strong
+            class="speaker-chip"
+            [class.speaker-chip--user]="bubble.sender === 'user'"
+            [class.speaker-chip--assistant]="bubble.sender !== 'user'"
+          >
+            <span class="speaker-mark" aria-hidden="true"></span>
+            {{ speakerLabel(bubble.sender) }}
+          </strong>
+          <span *ngIf="bubble.createdAt">{{ formatTimestamp(bubble.createdAt) }}</span>
         </div>
         <p>{{ bubble.text }}</p>
       </article>
@@ -22,7 +26,14 @@
         [class.chat-bubble--user]="message.sender === 'user'"
       >
         <div class="chat-bubble__meta">
-          <strong>{{ message.sender === 'assistant' ? 'Prometheus AI' : 'You' }}</strong>
+          <strong
+            class="speaker-chip"
+            [class.speaker-chip--user]="message.sender === 'user'"
+            [class.speaker-chip--assistant]="message.sender !== 'user'"
+          >
+            <span class="speaker-mark" aria-hidden="true"></span>
+            {{ speakerLabel(message.sender) }}
+          </strong>
           <span *ngIf="formatTimestamp(message.createdAt) as timeLabel">{{ timeLabel }}</span>
         </div>
         <p>{{ message.text }}</p>
