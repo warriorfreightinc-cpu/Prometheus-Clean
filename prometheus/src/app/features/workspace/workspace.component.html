@@ -79,46 +79,6 @@
         <app-company-setup-console (statusChanged)="handleCompanySetupStatus($event)"></app-company-setup-console>
       </section>
 
-      <section class="panel panel--dispatch" *ngIf="activeTab === 'dispatch'">
-        <section class="chat-surface chat-surface--dispatch">
-          <div #dispatchThreadRef class="chat-thread chat-thread--dispatch">
-            <article
-              class="chat-bubble"
-              *ngFor="let bubble of dispatchConsoleMessages; trackBy: trackByConsoleBubble"
-              [class.chat-bubble--user]="bubble.sender === 'user'"
-            >
-              <div class="chat-bubble__meta">
-                <strong>{{ bubble.label }}</strong>
-                <span>{{ bubble.sender === 'assistant' ? 'posting flow' : 'dispatch note' }}</span>
-              </div>
-              <p>{{ bubble.text }}</p>
-            </article>
-          </div>
-
-          <div class="message-banner error" *ngIf="dispatchError">{{ dispatchError }}</div>
-          <div class="message-banner" *ngIf="dispatchMessage">{{ dispatchMessage }}</div>
-
-          <div class="dispatch-composer">
-            <textarea
-              #dispatchNarrativeInput
-              [(ngModel)]="dispatchNarrative"
-              rows="1"
-              [placeholder]="dispatchPlaceholder"
-              (input)="handleDispatchNarrativeInput(dispatchNarrativeInput)"
-              (keydown)="handleDispatchNarrativeKeydown($event)"
-            ></textarea>
-            <div class="dispatch-composer__footer">
-              <span>{{ dispatchSubmitting ? 'Posting...' : 'Press Enter to post | Shift+Enter for new line' }}</span>
-              <div class="quick-actions quick-actions--inline">
-                <button class="primary-button primary-button--icon" type="button" (click)="submitNarrativeDispatch()" [disabled]="dispatchSubmitting">
-                  {{ dispatchSubmitting ? '...' : 'Send' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </section>
-
       <app-ai-matching-console
         *ngIf="activeTab === 'matching'"
         [matchingConsoleMessages]="matchingConsoleMessages"

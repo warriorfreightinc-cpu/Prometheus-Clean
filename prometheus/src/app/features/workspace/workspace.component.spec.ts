@@ -141,14 +141,16 @@ describe('WorkspaceComponent workspace tabs', () => {
     const component = createComponent();
     component.user = userWithRole('broker');
 
-    expect(component.workspaceTabs.map((tab) => tab.id)).toEqual(['dispatch', 'matching', 'loads', 'direct']);
+    expect(component.workspaceTabs.map((tab) => tab.id)).toEqual(['matching', 'loads', 'direct']);
+    expect(component.workspaceTabs[0]?.title).toBe('AI Transportation Center');
   });
 
   it('hides company setup from carrier desks', () => {
     const component = createComponent();
     component.user = userWithRole('carrier');
 
-    expect(component.workspaceTabs.map((tab) => tab.id)).toEqual(['dispatch', 'matching', 'loads', 'direct']);
+    expect(component.workspaceTabs.map((tab) => tab.id)).toEqual(['matching', 'loads', 'direct']);
+    expect(component.workspaceTabs[0]?.title).toBe('AI Transportation Center');
   });
 
   it('keeps company setup for company admin accounts', () => {
@@ -236,11 +238,84 @@ describe('WorkspaceComponent workspace tabs', () => {
   it('does not activate company setup when a broker desk attempts to select it', () => {
     const component = createComponent();
     component.user = userWithRole('broker');
-    component.activeTab = 'dispatch';
+    component.activeTab = 'matching';
 
     component.selectTab('companySetup');
 
-    expect(component.activeTab).toBe('dispatch');
+    expect(component.activeTab).toBe('matching');
+  });
+
+  it('posts dispatch language from the AI Transportation Center', () => {
+    const draft = {
+      role: 'broker',
+      quantity: 1,
+      equipmentPreset: 'V',
+      equipmentCodes: ['V'],
+      capacity: 'full',
+      length: 53,
+      weight: 42000,
+      rate: 2500,
+      readyDate: '2026-05-14',
+      endDate: '2026-05-15',
+      origin: { city: 'Chicago', state: 'IL' },
+      destination: { city: 'Memphis', state: 'TN' },
+      destinationOpen: false,
+      hazmatRequested: true,
+      teamRequested: false,
+      note: 'Post one hazmat load from Chicago, IL to Memphis, TN',
+      summary: '1 load from Chicago, IL to Memphis, TN, V 42,000 lbs, ready 2026-05-14.',
+      warnings: [],
+    };
+    const createdPost = createPost({
+      _id: 'broker-load-1',
+      origin: { type: 'place', place: 'Chicago, IL' },
+      destination: { type: 'place', place: 'Memphis, TN' },
+      equipment: ['V'],
+      weight: 42000,
+      rate: 2500,
+    }) as any;
+    const postsApi = {
+      createBrokerPost: jasmine.createSpy('createBrokerPost').and.returnValue(of(createdPost)),
+      getBrokerPosts: jasmine.createSpy('getBrokerPosts').and.returnValue(of([createdPost])),
+    };
+    const matchingApi = {
+      listAssistantEvents: jasmine.createSpy('listAssistantEvents').and.returnValue(of([])),
+      createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(of({ candidates: [] })),
+    };
+    const loadsApi = {
+      getCompanyLoads: jasmine.createSpy('getCompanyLoads').and.returnValue(of([])),
+    };
+    const messagesApi = {
+      getNewMessageDot: jasmine.createSpy('getNewMessageDot').and.returnValue(of([])),
+      getRooms: jasmine.createSpy('getRooms').and.returnValue(of([])),
+    };
+    const chatbbApi = {
+      getRuntimeStatus: jasmine.createSpy('getRuntimeStatus').and.returnValue(of(null)),
+    };
+    const locationApi = {
+      geocodePlace: jasmine.createSpy('geocodePlace').and.returnValue(of({
+        found: true,
+        provider: 'test',
+        input: '',
+        formattedAddress: null,
+        location: { lat: 41.8781, lng: -87.6298 },
+      })),
+    };
+    const dispatchIntake = {
+      parse: jasmine.createSpy('parse').and.returnValue({ draft, error: null }),
+    };
+    const component = createComponent({ postsApi, matchingApi, loadsApi, messagesApi, chatbbApi, locationApi, dispatchIntake });
+    component.user = userWithRole('broker');
+    component.activeTab = 'matching';
+    component.chatbbPrompt = 'post one hazmat load from Chicago, IL to Memphis, TN 42000 lbs $2500';
+
+    component.submitMatchingConsole();
+
+    expect(dispatchIntake.parse).toHaveBeenCalledWith('broker', 'post one hazmat load from Chicago, IL to Memphis, TN 42000 lbs $2500');
+    expect(postsApi.createBrokerPost).toHaveBeenCalled();
+    expect(component.chatbbPrompt).toBe('');
+    expect(component.selectedPostId).toBe('broker-load-1');
+    expect(component.matchingConsoleMessages.some((message) => message.text.includes('Prometheus posted 1 load'))).toBeTrue();
   });
 
   it('announces matches as a chat booking conversation, not match cards', () => {

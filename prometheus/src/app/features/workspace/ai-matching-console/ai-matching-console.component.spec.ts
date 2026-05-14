@@ -58,4 +58,26 @@ describe('AiMatchingConsoleComponent time labels', () => {
     expect(component.approveBrainRequest.emit).toHaveBeenCalledWith(approval);
     expect(component.rejectBrainRequest.emit).toHaveBeenCalledWith(approval);
   });
+
+  it('keeps the newest chat content in view when messages change', async () => {
+    await TestBed.configureTestingModule({
+      declarations: [AiMatchingConsoleComponent],
+      imports: [FormsModule],
+    }).compileComponents();
+    const fixture: ComponentFixture<AiMatchingConsoleComponent> = TestBed.createComponent(AiMatchingConsoleComponent);
+    const component = fixture.componentInstance;
+    component.matchingConsoleMessages = [
+      { id: 'm-1', sender: 'assistant', label: 'Prometheus', text: 'Morning scan is ready.' },
+    ];
+    fixture.detectChanges();
+    const scrollSpy = spyOn<any>(component, 'scrollThreadToBottom').and.callThrough();
+
+    component.matchingConsoleMessages = [
+      ...component.matchingConsoleMessages,
+      { id: 'm-2', sender: 'user', label: 'You', text: 'Post my truck in Chicago.' },
+    ];
+    fixture.detectChanges();
+
+    expect(scrollSpy).toHaveBeenCalled();
+  });
 });

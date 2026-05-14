@@ -1,6 +1,6 @@
 <section class="panel panel--matching">
   <section class="chat-surface">
-    <div class="chat-thread">
+    <div #chatThreadRef class="chat-thread">
       <article
         class="chat-bubble"
         *ngFor="let bubble of matchingConsoleMessages; trackBy: trackByBubble"
@@ -29,7 +29,7 @@
       </article>
 
       <div class="empty-state" *ngIf="!matchingConsoleMessages.length && !chatbbMessages.length && !chatbbLoading">
-        Type a command like "show my posted {{ dispatchRoleLabel }}" or "show matches for this posting".
+        Type a post, ask for hazmat options, or say "show my posted {{ dispatchRoleLabel }}".
       </div>
 
       <div class="loading-inline" *ngIf="chatbbLoading">Prometheus is reviewing the selected lane...</div>
@@ -60,7 +60,7 @@
         [ngModel]="chatbbPrompt"
         (ngModelChange)="updatePrompt($event)"
         type="text"
-        placeholder="Type a command or ask Prometheus to summarize, rank, counter, or book a match."
+        placeholder="Post, search, ask for rates, route context, setup, tracking, or booking help."
         [disabled]="chatbbLoading"
         (keyup.enter)="submit()"
       />

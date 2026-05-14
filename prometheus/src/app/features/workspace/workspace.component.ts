@@ -234,8 +234,7 @@ const EQUIPMENT_PRESETS: EquipmentPreset[] = [
 const WORKSPACE_TABS: WorkspaceTabConfig[] = [
   { id: 'masterOnboarding', title: 'Master Onboarding', detail: 'Approve company paperwork, setup, active, and inactive companies' },
   { id: 'companySetup', title: 'Company Setup', detail: 'Finish payment and create users after approval' },
-  { id: 'dispatch', title: 'Dispatch Posting Console', detail: 'Create trucks or loads from one posting bot window' },
-  { id: 'matching', title: 'AI Load/Truck Matching Console', detail: 'Talk with Prometheus about hazmat matches and booking next steps' },
+  { id: 'matching', title: 'AI Transportation Center', detail: 'Post, search, match, route, and book hazmat work with Prometheus' },
   { id: 'loads', title: 'Loads Console', detail: 'Review posted capacity, lane status, and next operational moves' },
   { id: 'direct', title: 'Direct Chat Console', detail: 'Work broker-carrier conversations in a dedicated room view' },
 ];
@@ -280,7 +279,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('dispatchNarrativeInput') dispatchNarrativeInput?: ElementRef<HTMLTextAreaElement>;
   @ViewChild('dispatchThreadRef') dispatchThreadRef?: ElementRef<HTMLDivElement>;
 
-  activeTab: WorkspaceTab = 'dispatch';
+  activeTab: WorkspaceTab = 'matching';
   dispatchMode: DispatchMode = 'create';
   user: AuthUser | null = null;
   adminSetupStatus: string | null = null;
@@ -1062,12 +1061,12 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
           this.dispatchNarrative = '';
           this.appendDispatchBubble(
             'assistant',
-            `${this.dispatchMessage}\n${dispatchDraft.summary}\nFor load matches go to the AI Load/Truck Matching Console.`,
+            `${this.dispatchMessage}\n${dispatchDraft.summary}\nPrometheus is checking matches in the AI Transportation Center.`,
             'Dispatch bot'
           );
           this.appendMatchingBubble(
             'assistant',
-            `Dispatch posted ${createdPosts.length} ${this.dispatchRoleLabel}.\n${createdLanes}\nPrometheus is checking for matching hazmat ${this.isBroker ? 'trucks' : 'loads'} now. Matching notes will appear in the AI chat.`,
+            `Prometheus posted ${createdPosts.length} ${this.dispatchRoleLabel}.\n${createdLanes}\nI am checking for matching hazmat ${this.isBroker ? 'trucks' : 'loads'} now.`,
             'Prometheus'
           );
           this.queueDispatchNarrativeResize();
@@ -1091,15 +1090,95 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (this.isTransportationCenterPostPrompt(prompt)) {
+      this.submitTransportationCenterPost(prompt);
+      return;
+    }
+
     this.sendBrainMatchingPrompt(prompt);
+  }
+
+  private isTransportationCenterPostPrompt(prompt: string): boolean {
+    if (typeof this.dispatchIntake.parse !== 'function') return false;
+
+    const normalized = prompt.toLowerCase();
+    if (/^\s*(find|search|show|do you have|what|where)\b/.test(normalized)) {
+      return false;
+    }
+
+    const asksToPost = /\b(post|create|add)\b/.test(normalized);
+    if (!asksToPost) return false;
+
+    return this.isBroker
+      ? /\b(load|loads|shipment|shipments|hazmat)\b/.test(normalized)
+      : /\b(truck|trucks|driver|drivers|unit|ready|empty|available)\b/.test(normalized);
+  }
+
+  private submitTransportationCenterPost(note: string): void {
+    if (!this.user || this.dispatchSubmitting) return;
+
+    this.chatbbPrompt = '';
+    this.chatbbError = '';
+    this.dispatchError = '';
+    this.dispatchMessage = '';
+    this.appendMatchingBubble('user', note, 'You');
+
+    const role = this.isBroker ? 'broker' : 'carrier';
+    const parsed = this.dispatchIntake.parse(role, note);
+    if (parsed.error || !parsed.draft) {
+      this.dispatchPreview = null;
+      this.dispatchError = parsed.error || 'Prometheus could not parse that dispatch note.';
+      this.appendMatchingBubble(
+        'assistant',
+        `${this.dispatchError}\nSend it like: "post 1 ${this.isBroker ? 'load' : 'truck'} from Chicago, IL ${this.isBroker ? 'to Memphis, TN ' : ''}53 dry van hazmat 42000 lbs".`,
+        'Prometheus'
+      );
+      return;
+    }
+
+    const dispatchDraft = parsed.draft;
+    this.dispatchPreview = dispatchDraft;
+    this.dispatchSubmitting = true;
+
+    forkJoin({
+      origin: this.resolveDispatchPlace(dispatchDraft.origin),
+      destination: dispatchDraft.destination ? this.resolveDispatchPlace(dispatchDraft.destination) : of(null),
+    })
+      .pipe(
+        switchMap(({ origin, destination }) => forkJoin(this.buildNarrativeDispatchRequests(dispatchDraft, origin, destination))),
+        finalize(() => (this.dispatchSubmitting = false))
+      )
+      .subscribe({
+        next: (createdPosts) => {
+          const createdLanes = createdPosts
+            .slice(0, 5)
+            .map((post, index) => `${index + 1}. ${this.formatLane(post)} | ${this.formatEquipment(post)} | ${this.formatMetric(post)}`)
+            .join('\n');
+          this.dispatchNarrative = '';
+          this.dispatchMessage = createdPosts.length === 1
+            ? `Prometheus posted 1 ${this.isBroker ? 'load' : 'truck'}.`
+            : `Prometheus posted ${createdPosts.length} ${this.dispatchRoleLabel}.`;
+          this.selectedPostId = createdPosts[0]?._id ?? this.selectedPostId;
+          this.appendMatchingBubble(
+            'assistant',
+            `${this.dispatchMessage}\n${dispatchDraft.summary}\n${createdLanes}\nI am checking for matching hazmat ${this.isBroker ? 'trucks' : 'loads'} now and I will keep this center updated when a better option appears.`,
+            'Prometheus'
+          );
+          this.refreshWorkspace();
+        },
+        error: (error) => {
+          const backendMessage = Array.isArray(error?.error?.message) ? error.error.message.join(', ') : error?.error?.message;
+          this.dispatchError = backendMessage || 'The dispatch note could not be turned into a live post.';
+          this.appendMatchingBubble('assistant', this.dispatchError, 'Prometheus');
+        },
+      });
   }
 
   useSavedTemplate(template: SavedDispatchTemplate): void {
     this.dispatchNarrative = template.prompt;
     this.queueDispatchNarrativeResize();
-    this.activeTab = 'dispatch';
-    this.appendDispatchBubble('assistant', `Loaded template "${template.label}". Review it and post when ready.`, 'Dispatch bot');
-    this.appendMatchingBubble('assistant', `Template "${template.label}" was moved into the Dispatch Posting Console.`, 'Prometheus');
+    this.activeTab = 'matching';
+    this.appendMatchingBubble('assistant', `Template "${template.label}" is ready in the AI Transportation Center. Review it, adjust if needed, then send it as a post.`, 'Prometheus');
   }
 
   refreshWorkspace(): void {
@@ -2120,7 +2199,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.dispatchError = '';
     this.dispatchMessage = canEdit
       ? ''
-      : 'Prometheus copied this team posting into the Dispatch Posting Console as a new draft. The original posting stays unchanged.';
+      : 'Prometheus copied this team posting into the AI Transportation Center as a new draft. The original posting stays unchanged.';
     this.dispatchForm.patchValue({
       capacity: typeof post.capacity === 'string' ? post.capacity : 'full',
       equipmentPreset: this.findEquipmentPreset(post.equipment),
@@ -3279,15 +3358,14 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   private repostSelectedPost(): void {
     const post = this.selectedPost;
     if (!post) {
-      this.appendMatchingBubble('assistant', 'Select a posting first if you want to repost it from the dispatch console.', 'Prometheus');
+      this.appendMatchingBubble('assistant', 'Select a posting first if you want to repost it from the AI Transportation Center.', 'Prometheus');
       return;
     }
 
     this.dispatchNarrative = this.buildTemplatePrompt(post);
     this.queueDispatchNarrativeResize();
-    this.activeTab = 'dispatch';
-    this.appendDispatchBubble('assistant', `Prometheus loaded "${this.formatLane(post)}" back into the Dispatch Posting Console for reposting.`, 'Dispatch bot');
-    this.appendMatchingBubble('assistant', 'The selected posting was moved back into the Dispatch Posting Console. Review the note and post it again when ready.', 'Prometheus');
+    this.activeTab = 'matching';
+    this.appendMatchingBubble('assistant', `Prometheus loaded "${this.formatLane(post)}" into the AI Transportation Center for reposting. Review the note and send it when ready.`, 'Prometheus');
   }
 
   private deleteSelectedPost(): void {
@@ -4748,11 +4826,18 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       this.matchingConsoleMessages = [
         this.createConsoleBubble(
           'assistant',
-          `This is the Hazmat AI Matching Console. Tell Prometheus what to review, ask for matches, or say "book match 1" when you want to start the booking conversation.`,
+          this.buildTransportationCenterGreeting(),
           'Prometheus'
         ),
       ];
     }
+  }
+
+  private buildTransportationCenterGreeting(now = new Date()): string {
+    const hour = now.getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const name = this.user?.firstName ? `, ${this.user.firstName}` : '';
+    return `${greeting}${name}. AI Transportation Center is awake.\nPost hazmat ${this.dispatchRoleLabel}, ask for matches, rates, route context, setup, tracking, or booking help in this one chat.\nI will also call out operational risks here: late drivers, missed pickup windows, tracking gaps, equipment conflicts, road closures, and loads that need attention.`;
   }
 
   private appendDispatchBubble(sender: 'assistant' | 'user', text: string, label = sender === 'assistant' ? 'Dispatch bot' : 'You'): void {

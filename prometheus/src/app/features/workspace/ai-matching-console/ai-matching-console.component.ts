@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
 import { ChatbbThreadMessage, PrometheusBrainApproval } from '../../../shared/types/models';
 import { formatChatTimeLabel } from '../../../shared/time/chat-time-label';
 
@@ -15,7 +15,9 @@ type ConsoleBubble = {
   templateUrl: './ai-matching-console.component.html',
   styleUrls: ['./ai-matching-console.component.scss'],
 })
-export class AiMatchingConsoleComponent {
+export class AiMatchingConsoleComponent implements AfterViewChecked {
+  @ViewChild('chatThreadRef') private chatThreadRef?: ElementRef<HTMLDivElement>;
+
   @Input() matchingConsoleMessages: ConsoleBubble[] = [];
   @Input() chatbbMessages: ChatbbThreadMessage[] = [];
   @Input() chatbbLoading = false;
@@ -28,6 +30,15 @@ export class AiMatchingConsoleComponent {
   @Output() submitConsole = new EventEmitter<void>();
   @Output() approveBrainRequest = new EventEmitter<PrometheusBrainApproval>();
   @Output() rejectBrainRequest = new EventEmitter<PrometheusBrainApproval>();
+
+  private lastRenderedMessageKey = '';
+
+  ngAfterViewChecked(): void {
+    const messageKey = this.currentMessageKey();
+    if (messageKey === this.lastRenderedMessageKey) return;
+    this.lastRenderedMessageKey = messageKey;
+    this.scrollThreadToBottom();
+  }
 
   updatePrompt(value: string): void {
     this.chatbbPromptChange.emit(value);
@@ -55,5 +66,23 @@ export class AiMatchingConsoleComponent {
 
   formatTimestamp(value: string | Date | null | undefined, now = new Date()): string {
     return formatChatTimeLabel(value, now);
+  }
+
+  private currentMessageKey(): string {
+    const matchingTail = this.matchingConsoleMessages.at(-1);
+    const chatTail = this.chatbbMessages.at(-1);
+    return [
+      this.matchingConsoleMessages.length,
+      matchingTail?.id ?? '',
+      this.chatbbMessages.length,
+      chatTail?.createdAt ?? '',
+      this.chatbbLoading ? 'loading' : 'idle',
+    ].join('|');
+  }
+
+  private scrollThreadToBottom(): void {
+    const thread = this.chatThreadRef?.nativeElement;
+    if (!thread) return;
+    thread.scrollTop = thread.scrollHeight;
   }
 }
