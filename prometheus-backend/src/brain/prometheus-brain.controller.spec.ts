@@ -25,18 +25,35 @@ describe("PrometheusBrainController", () => {
       listForCompany: jest.fn().mockResolvedValue([]),
       updateCompanySettings: jest.fn().mockResolvedValue({ brainSettings: { memoryMode: "off" } }),
     };
+    const settings = {
+      getCompanySettings: jest.fn().mockResolvedValue({ memoryMode: "off" }),
+      updateCompanySettings: jest.fn().mockResolvedValue({ memoryMode: "companyManaged" }),
+    };
+    const aiProvider = {
+      testProvider: jest.fn().mockResolvedValue({
+        ok: true,
+        providerMode: "local",
+        providerLabel: "Local OpenAI-compatible server",
+        model: "gpt-5.4-mini",
+        message: "Prometheus Brain Pro connected.",
+      }),
+    };
 
     return {
       controller: new PrometheusBrainController(
         brain as any,
         events as any,
         approvals as any,
-        memory as any
+        memory as any,
+        settings as any,
+        aiProvider as any
       ),
       brain,
       events,
       approvals,
       memory,
+      settings,
+      aiProvider,
     };
   };
 
@@ -68,11 +85,27 @@ describe("PrometheusBrainController", () => {
   });
 
   it("updates company Brain settings with the current company and user", async () => {
-    const { controller, memory } = createController();
+    const { controller, settings } = createController();
     const payload = { memoryMode: "companyManaged" as const };
 
     await controller.updateSettings(payload, req);
 
-    expect(memory.updateCompanySettings).toHaveBeenCalledWith("company-1", "user-1", payload);
+    expect(settings.updateCompanySettings).toHaveBeenCalledWith("company-1", "user-1", payload);
+  });
+
+  it("returns sanitized Brain settings for the current company", async () => {
+    const { controller, settings } = createController();
+
+    await controller.getSettings(req);
+
+    expect(settings.getCompanySettings).toHaveBeenCalledWith("company-1");
+  });
+
+  it("tests the Brain Pro provider for the current company", async () => {
+    const { controller, aiProvider } = createController();
+
+    await controller.testProvider(req);
+
+    expect(aiProvider.testProvider).toHaveBeenCalledWith("company-1");
   });
 });

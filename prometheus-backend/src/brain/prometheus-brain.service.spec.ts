@@ -13,6 +13,7 @@ describe("PrometheusBrainService", () => {
     memory: any;
     agentCommands: any;
     routingIntelligence: any;
+    aiProvider: any;
   }> = {}) => {
     const events = overrides.events ?? {
       record: jest.fn().mockResolvedValue({ _id: "event-1" }),
@@ -58,14 +59,25 @@ describe("PrometheusBrainService", () => {
         alternativeRoutes: ["Alternative route details require Google Routes or a hazmat routing provider."],
       }),
     };
+    const aiProvider = overrides.aiProvider ?? {
+      generate: jest.fn().mockResolvedValue({
+        text: null,
+        providerMode: "fallback",
+        providerLabel: "Deterministic Prometheus fallback",
+        model: null,
+        usedFallback: true,
+      }),
+      testProvider: jest.fn(),
+    };
 
     return {
-      service: new PrometheusBrainService(events, approvals, memory, agentCommands, routingIntelligence),
+      service: new PrometheusBrainService(events, approvals, memory, agentCommands, routingIntelligence, aiProvider),
       events,
       approvals,
       memory,
       agentCommands,
       routingIntelligence,
+      aiProvider,
     };
   };
 
@@ -197,6 +209,43 @@ describe("PrometheusBrainService", () => {
     expect(prompt).toContain("warm");
     expect(prompt).toContain("assistant sitting beside the dispatcher");
     expect(prompt).toContain("Ask one practical follow-up question");
+  });
+
+  it("uses Brain Pro provider gateway for general transportation prompts", async () => {
+    const { service, aiProvider, events } = createService({
+      aiProvider: {
+        generate: jest.fn().mockResolvedValue({
+          text: "Morning. I can help you work the Chicago board and keep approvals clean.",
+          providerMode: "companyOpenAi",
+          providerLabel: "Company OpenAI",
+          model: "gpt-5.5",
+          usedFallback: false,
+        }),
+      },
+    });
+
+    const response: any = await service.handlePrompt({
+      prompt: "good morning",
+      source: "matching",
+    }, user);
+
+    expect(aiProvider.generate).toHaveBeenCalledWith(expect.objectContaining({
+      companyId: "company-1",
+      taskClass: "simple",
+      systemPrompt: expect.stringContaining("Prometheus"),
+      userPayload: expect.stringContaining("good morning"),
+    }));
+    expect(response.answer).toContain("Morning");
+    expect(response.metadata.ai).toEqual(expect.objectContaining({
+      providerMode: "companyOpenAi",
+      model: "gpt-5.5",
+    }));
+    expect(events.record).toHaveBeenCalledWith(expect.objectContaining({
+      tool: "brainProProviderGateway",
+      payload: expect.objectContaining({
+        ai: expect.objectContaining({ providerMode: "companyOpenAi" }),
+      }),
+    }));
   });
 
   it("routes map prompts through routing intelligence instead of matching search", async () => {

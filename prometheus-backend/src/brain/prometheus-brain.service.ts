@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import OpenAI from "openai";
 import { AgentCommandService } from "../matching/agent-command.service";
 import { RoutingIntelligenceRequestDTO } from "../routing/dto/routing-intelligence.dto";
 import { RoutingIntelligenceService } from "../routing/routing-intelligence.service";
+import { BrainAiProviderGateway } from "./ai-provider/brain-ai-provider.gateway";
+import { BrainAiGenerateResult, BrainAiTaskClass } from "./ai-provider/brain-ai-provider.types";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
 import { BrainMemoryService } from "./brain-memory.service";
@@ -14,16 +15,6 @@ import {
   PrometheusBrainIntent,
 } from "./prometheus-brain-parser";
 
-const nodeFetch: any = require("node-fetch");
-
-type BrainAiRuntimeConfig = {
-  mode: "openai" | "local";
-  providerLabel: string;
-  apiKey: string;
-  model: string;
-  baseURL?: string;
-};
-
 @Injectable()
 export class PrometheusBrainService {
   constructor(
@@ -31,7 +22,8 @@ export class PrometheusBrainService {
     private readonly approvals: BrainApprovalService,
     private readonly memory: BrainMemoryService,
     private readonly agentCommands: AgentCommandService,
-    private readonly routingIntelligence: RoutingIntelligenceService
+    private readonly routingIntelligence: RoutingIntelligenceService,
+    private readonly aiProvider: BrainAiProviderGateway
   ) {}
 
   async handlePrompt(data: PrometheusBrainPromptDTO, user: any) {
@@ -171,11 +163,18 @@ export class PrometheusBrainService {
     }
 
     const aiAnswer = await this.tryGenerateBrainAnswer(parsed.intent, prompt, {
+      companyId,
       role,
       source,
       related: data.related,
     });
-    const answer = aiAnswer ?? this.renderKnowledgeAnswer(parsed.intent, prompt);
+    const answer = aiAnswer.text ?? this.renderKnowledgeAnswer(parsed.intent, prompt);
+    const aiMetadata = {
+      providerMode: aiAnswer.providerMode,
+      providerLabel: aiAnswer.providerLabel,
+      model: aiAnswer.model,
+      usedFallback: aiAnswer.usedFallback,
+    };
     const event = await this.events.record({
       companyId,
       userId,
@@ -184,8 +183,9 @@ export class PrometheusBrainService {
       type: "suggestionShown",
       prompt,
       intent: parsed.intent,
-      tool: aiAnswer ? "transportationAiRuntime" : "deterministicTransportationAnswer",
+      tool: aiAnswer.text ? "brainProProviderGateway" : "deterministicTransportationAnswer",
       message: answer,
+      payload: { ai: aiMetadata },
     });
 
     return {
@@ -193,57 +193,28 @@ export class PrometheusBrainService {
       intent: parsed.intent,
       answer,
       eventId: String(event?._id ?? ""),
+      metadata: { ai: aiMetadata },
     };
-  }
-
-  private getAiRuntimeConfig(): BrainAiRuntimeConfig | null {
-    if (process.env.NODE_ENV === "test") {
-      return null;
-    }
-
-    const baseURL = process.env.OPENAI_BASE_URL?.trim();
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    const configuredModel = process.env.OPENAI_MODEL?.trim();
-
-    if (baseURL) {
-      return {
-        mode: "local",
-        providerLabel: "Local OpenAI-compatible server",
-        apiKey: apiKey || "lm-studio",
-        model: configuredModel || "prometheus-local",
-        baseURL,
-      };
-    }
-
-    if (apiKey) {
-      return {
-        mode: "openai",
-        providerLabel: "OpenAI",
-        apiKey,
-        model: configuredModel || "gpt-5.4-mini",
-      };
-    }
-
-    return null;
   }
 
   private async tryGenerateBrainAnswer(
     intent: PrometheusBrainIntent,
     prompt: string,
-    context: { role: string; source: PrometheusBrainSource; related?: Record<string, string> }
-  ): Promise<string | null> {
-    const runtime = this.getAiRuntimeConfig();
-    if (!runtime) {
-      return null;
-    }
+    context: { companyId: string; role: string; source: PrometheusBrainSource; related?: Record<string, string> }
+  ): Promise<BrainAiGenerateResult> {
+    return this.aiProvider.generate({
+      companyId: context.companyId,
+      taskClass: this.taskClassForIntent(intent),
+      systemPrompt: this.buildBrainSystemPrompt(),
+      userPayload: this.buildBrainUserPayload(intent, prompt, context),
+    });
+  }
 
-    try {
-      return runtime.mode === "local"
-        ? await this.generateLocalBrainAnswer(runtime, intent, prompt, context)
-        : await this.generateOpenAiBrainAnswer(runtime, intent, prompt, context);
-    } catch {
-      return null;
-    }
+  private taskClassForIntent(intent: PrometheusBrainIntent): BrainAiTaskClass {
+    if (intent === "generalTransportation") return "simple";
+    if (intent === "draftEmail" || intent === "draftChat") return "drafting";
+    if (intent === "map" || intent === "search") return "reasoning";
+    return "reasoning";
   }
 
   private buildBrainSystemPrompt() {
@@ -273,74 +244,6 @@ export class PrometheusBrainService {
         "Never claim a live match exists unless it is supplied by the system context.",
       ],
     });
-  }
-
-  private async generateLocalBrainAnswer(
-    runtime: BrainAiRuntimeConfig,
-    intent: PrometheusBrainIntent,
-    prompt: string,
-    context: Record<string, unknown>
-  ) {
-    const client = new OpenAI({
-      apiKey: runtime.apiKey,
-      baseURL: runtime.baseURL,
-      fetch: nodeFetch,
-      timeout: 45000,
-    });
-
-    const response = await client.chat.completions.create({
-      model: runtime.model,
-      temperature: 0.35,
-      messages: [
-        { role: "system", content: this.buildBrainSystemPrompt() },
-        { role: "user", content: this.buildBrainUserPayload(intent, prompt, context) },
-      ],
-    });
-
-    return response.choices?.[0]?.message?.content?.trim() || null;
-  }
-
-  private async generateOpenAiBrainAnswer(
-    runtime: BrainAiRuntimeConfig,
-    intent: PrometheusBrainIntent,
-    prompt: string,
-    context: Record<string, unknown>
-  ) {
-    const client = new OpenAI({
-      apiKey: runtime.apiKey,
-      fetch: nodeFetch,
-      timeout: 30000,
-    });
-
-    const response = await client.responses.create({
-      model: runtime.model,
-      store: false,
-      temperature: 0.35,
-      input: [
-        {
-          role: "system",
-          content: [{ type: "input_text", text: this.buildBrainSystemPrompt() }],
-        },
-        {
-          role: "user",
-          content: [{ type: "input_text", text: this.buildBrainUserPayload(intent, prompt, context) }],
-        },
-      ],
-      text: { verbosity: "medium" },
-    });
-
-    return response.output_text?.trim() || this.extractResponseOutputText(response)?.trim() || null;
-  }
-
-  private extractResponseOutputText(response: any) {
-    for (const item of response?.output ?? []) {
-      for (const entry of item?.content ?? []) {
-        if (entry?.type === "output_text" && entry?.text) {
-          return entry.text;
-        }
-      }
-    }
-    return null;
   }
 
   private async handleSearchIntent(

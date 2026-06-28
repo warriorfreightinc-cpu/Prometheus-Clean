@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
 import { ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import { Roles } from "../shared/decorators/roles.decorator";
+import { BrainAiProviderGateway } from "./ai-provider/brain-ai-provider.gateway";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
 import { BrainMemoryService } from "./brain-memory.service";
+import { BrainSettingsService } from "./brain-settings.service";
 import {
   PrometheusBrainPromptDTO,
   UpdateBrainSettingsDTO,
@@ -17,7 +19,9 @@ export class PrometheusBrainController {
     private readonly brain: PrometheusBrainService,
     private readonly events: BrainEventService,
     private readonly approvals: BrainApprovalService,
-    private readonly memory: BrainMemoryService
+    private readonly memory: BrainMemoryService,
+    private readonly settings: BrainSettingsService,
+    private readonly aiProvider: BrainAiProviderGateway
   ) {}
 
   @Roles("broker", "carrier", "admin", "manager", "supervisor", "superadmin")
@@ -63,13 +67,27 @@ export class PrometheusBrainController {
   }
 
   @Roles("admin", "supervisor", "superadmin")
+  @Get("settings")
+  @ApiOkResponse({ status: 200 })
+  getSettings(@Req() req) {
+    return this.settings.getCompanySettings(String(req.user.companyId ?? ""));
+  }
+
+  @Roles("admin", "supervisor", "superadmin")
   @Patch("settings")
   @ApiOkResponse({ status: 200 })
   updateSettings(@Body() data: UpdateBrainSettingsDTO, @Req() req) {
-    return this.memory.updateCompanySettings(
+    return this.settings.updateCompanySettings(
       String(req.user.companyId ?? ""),
       String(req.user._id ?? ""),
       data
     );
+  }
+
+  @Roles("admin", "supervisor", "superadmin")
+  @Post("settings/test-provider")
+  @ApiOkResponse({ status: 200 })
+  testProvider(@Req() req) {
+    return this.aiProvider.testProvider(String(req.user.companyId ?? ""));
   }
 }
