@@ -3,6 +3,7 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { CompanySchema } from "../company/schema/company.schema";
 import { MatchingModule } from "../matching/matching.module";
 import { RoutingModule } from "../routing/routing.module";
+import { BrainAiProviderGateway } from "./ai-provider/brain-ai-provider.gateway";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
 import { BrainMemoryService } from "./brain-memory.service";
@@ -31,6 +32,7 @@ import { PrometheusBrainMemorySchema } from "./schema/prometheus-brain-memory.sc
     BrainApprovalService,
     BrainMemoryService,
     BrainSettingsService,
+    BrainAiProviderGateway,
   ],
   exports: [
     PrometheusBrainService,
@@ -38,6 +40,7 @@ import { PrometheusBrainMemorySchema } from "./schema/prometheus-brain-memory.sc
     BrainApprovalService,
     BrainMemoryService,
     BrainSettingsService,
+    BrainAiProviderGateway,
   ],
 })
 export class BrainModule {}
