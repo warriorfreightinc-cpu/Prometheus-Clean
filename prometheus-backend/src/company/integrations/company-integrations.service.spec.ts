@@ -100,6 +100,9 @@ describe("CompanyIntegrationsService", () => {
         })
       ])
     );
+    const openAiProvider = result.platform.find((provider) => provider.provider === "openai");
+    expect(openAiProvider?.notes).toContain("Brain Pro");
+    expect(openAiProvider?.environmentKeys).toEqual(["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"]);
     expect(result.company).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
