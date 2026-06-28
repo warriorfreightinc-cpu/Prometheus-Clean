@@ -98,6 +98,18 @@ export interface CompanyBrainSettings {
   memoryMode?: "off" | "companyManaged" | "prometheusManaged";
   auditRetentionDays?: number;
   allowProviderTools?: boolean;
+  ai?: {
+    providerMode?: "prometheusManaged" | "companyOpenAi" | "local" | "disabled";
+    reasoningModel?: string;
+    economyModel?: string;
+    monthlyBudgetUsd?: number;
+    dailyRequestLimit?: number;
+    providerKeyStatus?: "missing" | "connected" | "failed" | "rotating";
+    providerKeyFingerprint?: string | null;
+    providerLastTestedAt?: Date | null;
+    providerLastError?: string | null;
+    encryptedOpenAiApiKey?: string;
+  };
   updatedBy?: string;
   updatedAt?: Date;
 }
