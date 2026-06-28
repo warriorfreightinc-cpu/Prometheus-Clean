@@ -1,6 +1,23 @@
 import { Document } from "mongoose";
 
 export type PrometheusLoadStatus = "active" | "library" | "readyToBill" | "archived";
+export type LoadAccessRequestStatus = "pending" | "approved" | "rejected";
+
+export interface LoadAccessRequest {
+  id: string;
+  requestedById: string;
+  requestedByName: string;
+  requestedByEmail: string;
+  requestedAt: Date;
+  targetDispatcherId: string;
+  targetDispatcherName: string;
+  status: LoadAccessRequestStatus;
+  note?: string;
+  decidedById?: string;
+  decidedByName?: string;
+  decidedAt?: Date;
+  decisionNote?: string;
+}
 
 export interface PrometheusLoad extends Document {
   companyId: string;
@@ -40,6 +57,7 @@ export interface PrometheusLoad extends Document {
     assignedDispatcherName: string;
     assignedDispatcherEmail: string;
   };
+  accessRequests?: LoadAccessRequest[];
   equipmentLabel?: string;
   rate?: number | null;
   weight?: number | null;

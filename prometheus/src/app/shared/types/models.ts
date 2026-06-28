@@ -784,6 +784,23 @@ export interface RoomIntegrationExecutionResponse {
 }
 
 export type PrometheusLoadStatus = 'active' | 'library' | 'readyToBill' | 'archived';
+export type LoadAccessRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface LoadAccessRequest {
+  id: string;
+  requestedById: string;
+  requestedByName: string;
+  requestedByEmail: string;
+  requestedAt: string;
+  targetDispatcherId: string;
+  targetDispatcherName: string;
+  status: LoadAccessRequestStatus;
+  note?: string | null;
+  decidedById?: string | null;
+  decidedByName?: string | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+}
 
 export interface PrometheusLoad {
   _id: string;
@@ -827,6 +844,7 @@ export interface PrometheusLoad {
   equipmentLabel?: string | null;
   rate?: number | null;
   weight?: number | null;
+  accessRequests?: LoadAccessRequest[];
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -847,6 +865,15 @@ export interface UpdatePrometheusLoadPayload {
   driverName?: string;
   truckLabel?: string;
   summary?: string;
+}
+
+export interface RequestLoadAccessPayload {
+  note?: string;
+}
+
+export interface DecideLoadAccessPayload {
+  action: 'approve' | 'reject';
+  note?: string;
 }
 
 export interface InboxDot {

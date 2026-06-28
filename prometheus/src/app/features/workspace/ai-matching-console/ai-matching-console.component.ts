@@ -17,6 +17,7 @@ type ConsoleBubble = {
 })
 export class AiMatchingConsoleComponent implements AfterViewChecked {
   @ViewChild('chatThreadRef') private chatThreadRef?: ElementRef<HTMLDivElement>;
+  @ViewChild('importFileInput') private importFileInput?: ElementRef<HTMLInputElement>;
 
   @Input() matchingConsoleMessages: ConsoleBubble[] = [];
   @Input() chatbbMessages: ChatbbThreadMessage[] = [];
@@ -28,6 +29,7 @@ export class AiMatchingConsoleComponent implements AfterViewChecked {
 
   @Output() chatbbPromptChange = new EventEmitter<string>();
   @Output() submitConsole = new EventEmitter<void>();
+  @Output() importFileSelected = new EventEmitter<File>();
   @Output() approveBrainRequest = new EventEmitter<PrometheusBrainApproval>();
   @Output() rejectBrainRequest = new EventEmitter<PrometheusBrainApproval>();
 
@@ -46,6 +48,24 @@ export class AiMatchingConsoleComponent implements AfterViewChecked {
 
   submit(): void {
     this.submitConsole.emit();
+  }
+
+  openImportPicker(): void {
+    this.importFileInput?.nativeElement.click();
+  }
+
+  handleImportFileSelection(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.importFileSelected.emit(file);
+    input.value = '';
+  }
+
+  handleComposerKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    this.submit();
   }
 
   approve(approval: PrometheusBrainApproval): void {

@@ -12,6 +12,7 @@ describe("PrometheusBrainService", () => {
     approvals: any;
     memory: any;
     agentCommands: any;
+    routingIntelligence: any;
   }> = {}) => {
     const events = overrides.events ?? {
       record: jest.fn().mockResolvedValue({ _id: "event-1" }),
@@ -29,13 +30,42 @@ describe("PrometheusBrainService", () => {
         metadata: { commandType: "search" },
       }),
     };
+    const routingIntelligence = overrides.routingIntelligence ?? {
+      buildRouteIntelligence: jest.fn().mockResolvedValue({
+        routeProvider: "fallback-routing",
+        providerStatus: "fallback",
+        truckLocationLabel: "Gary, IN",
+        originLabel: "Chicago, IL",
+        destinationLabel: "Memphis, TN",
+        stops: [],
+        deadheadMiles: 31,
+        loadedMiles: 532,
+        totalMiles: 563,
+        deadheadDriveMinutes: 45,
+        loadedDriveMinutes: 680,
+        totalDriveMinutes: 725,
+        postedRate: null,
+        suggestedRate: null,
+        ratePerLoadedMile: null,
+        fuelEstimate: null,
+        tollEstimate: null,
+        vehicleProfile: { equipment: [], hazmat: true, weightLbs: 42000 },
+        hazmatNotes: [
+          "Hazmat route restrictions are advisory until a live hazmat routing provider is connected.",
+          "Verify placarding, segregation, tunnel restrictions, permits, and company safety policy before dispatch.",
+        ],
+        providerWarnings: [],
+        alternativeRoutes: ["Alternative route details require Google Routes or a hazmat routing provider."],
+      }),
+    };
 
     return {
-      service: new PrometheusBrainService(events, approvals, memory, agentCommands),
+      service: new PrometheusBrainService(events, approvals, memory, agentCommands, routingIntelligence),
       events,
       approvals,
       memory,
       agentCommands,
+      routingIntelligence,
     };
   };
 
@@ -140,5 +170,65 @@ describe("PrometheusBrainService", () => {
     expect(response.intent).toBe("hazmatQuestion");
     expect(response.answer).toContain("verify");
     expect(response.answer).toContain("safety");
+  });
+
+  it("keeps hazmat compliance guidance deterministic even when an AI runtime is available", async () => {
+    const { service } = createService();
+    const aiSpy = jest
+      .spyOn(service as any, "tryGenerateBrainAnswer")
+      .mockResolvedValue("model-only answer");
+
+    const response = await service.handlePrompt({
+      prompt: "what should I check before moving a hazmat load through a route with tunnels?",
+      source: "matching",
+    }, user);
+
+    expect(aiSpy).not.toHaveBeenCalled();
+    expect(response.intent).toBe("hazmatQuestion");
+    expect(response.answer).toContain("verify");
+    expect(response.answer).toContain("DOT/PHMSA");
+  });
+
+  it("frames AI runtime answers as a friendly operations assistant", () => {
+    const { service } = createService();
+
+    const prompt = (service as any).buildBrainSystemPrompt();
+
+    expect(prompt).toContain("warm");
+    expect(prompt).toContain("assistant sitting beside the dispatcher");
+    expect(prompt).toContain("Ask one practical follow-up question");
+  });
+
+  it("routes map prompts through routing intelligence instead of matching search", async () => {
+    const { service, agentCommands, routingIntelligence } = createService();
+
+    const response: any = await service.handlePrompt({
+      prompt: "show route from Chicago, IL to Memphis, TN with truck in Gary, IN under 42000 lb",
+      source: "matching",
+    }, user);
+
+    expect(agentCommands.handlePrompt).not.toHaveBeenCalled();
+    expect(routingIntelligence.buildRouteIntelligence).toHaveBeenCalledWith(expect.objectContaining({
+      origin: expect.objectContaining({ label: "Chicago, IL" }),
+      destination: expect.objectContaining({ label: "Memphis, TN" }),
+      truckLocation: expect.objectContaining({ label: "Gary, IN" }),
+      weightLbs: 42000,
+    }));
+    expect(response).toMatchObject({
+      handled: true,
+      intent: "map",
+      metadata: {
+        routeIntelligence: expect.objectContaining({
+          originLabel: "Chicago, IL",
+          destinationLabel: "Memphis, TN",
+          loadedMiles: 532,
+          totalMiles: 563,
+        }),
+      },
+    });
+    expect(response.answer).toContain("Route intelligence");
+    expect(response.answer).toContain("Chicago, IL");
+    expect(response.answer).toContain("Memphis, TN");
+    expect(response.answer).toContain("Hazmat route restrictions");
   });
 });

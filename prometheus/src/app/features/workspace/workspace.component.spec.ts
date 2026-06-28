@@ -2,7 +2,7 @@ import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { FormBuilder } from '@angular/forms';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { Router } from '@angular/router';
 import { BrainApiService } from '../../core/api/brain-api.service';
 import { ChatbbApiService } from '../../core/api/chatbb-api.service';
@@ -206,7 +206,7 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Prometheus Brain settings');
   });
 
-  it('keeps the existing Booking Chat button labels unchanged', async () => {
+  it('shows the Booking Chat action buttons in the expected order', async () => {
     const fixture = await createFixture();
     const component = fixture.componentInstance;
     component.ngOnInit = () => undefined;
@@ -229,10 +229,51 @@ describe('WorkspaceComponent workspace tabs', () => {
       'Assign driver',
       'Add contact',
       'Track',
+      'Route map',
       'Delivered',
       'Cancel load',
       'Send to Loads Console',
     ]);
+  });
+
+  it('opens route intelligence from the Booking Chat route map button', async () => {
+    const fixture = await createFixture();
+    const component = fixture.componentInstance;
+    component.ngOnInit = () => undefined;
+    component.user = userWithRole('carrier');
+    component.loading = false;
+    component.activeTab = 'direct';
+    component.activeDirectConsoleView = 'booking';
+    const room = createRoom({ id: 'booking-map-1', loadId: 'LD-MAP-1', bookingStatus: 'booked' });
+    component.selectedRoomId = room.id;
+    component.rooms = [room as any];
+    component.loads = [
+      createLoad({
+        _id: 'LD-MAP-1',
+        reference: 'LD-MAP-1',
+        lane: { origin: 'Chicago, IL', destination: 'Memphis, TN' },
+        rate: 2500,
+        source: { brokerPostId: room.brokerPostId, carrierPostId: room.carrierPostId },
+      }) as any,
+    ];
+    const workflow = (component as any).ensureDirectRoomWorkflow(room.id);
+    workflow.trackingProvider = 'MacroPoint';
+    workflow.trackingShared = true;
+
+    fixture.detectChanges();
+
+    const routeButton = Array.from(
+      fixture.nativeElement.querySelectorAll('.quick-actions--booking button') as NodeListOf<HTMLButtonElement>
+    ).find((button) => button.textContent?.trim() === 'Route map');
+    expect(routeButton).toBeTruthy();
+
+    routeButton?.click();
+    fixture.detectChanges();
+
+    expect(component.routeIntelligencePanel.open).toBeTrue();
+    expect(component.routeIntelligencePanel.source).toBe('booking');
+    expect(component.routeIntelligencePanel.laneLabel).toBe('Chicago, IL -> Memphis, TN');
+    expect(fixture.nativeElement.textContent).toContain('Route intelligence');
   });
 
   it('does not activate company setup when a broker desk attempts to select it', () => {
@@ -834,6 +875,136 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(component.chatbbError).toBe('');
   });
 
+  it('answers casual greetings locally without locking the AI Transportation Center composer', () => {
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(NEVER),
+    };
+    const component = createComponent({ brainApi });
+    component.user = userWithRole('broker');
+    component.activeTab = 'matching';
+    component.chatbbPrompt = 'Good mornin';
+
+    component.submitMatchingConsole();
+
+    expect(brainApi.sendPrompt).not.toHaveBeenCalled();
+    expect(component.chatbbLoading).toBeFalse();
+    expect(component.chatbbPrompt).toBe('');
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('Good morning');
+  });
+
+  it('answers lane information requests from current matches without locking the composer', () => {
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(NEVER),
+    };
+    const component = createComponent({ brainApi });
+    component.user = userWithRole('broker');
+    component.activeTab = 'matching';
+    component.matchCandidates = [
+      {
+        matchPostId: 'truck-1',
+        matchPostType: 'carrierPost',
+        score: 0.9,
+        scoreBreakdown: {} as any,
+        summary: {
+          companyId: 'carrier-company-1',
+          publisherId: 'carrier-user',
+          lane: { origin: 'Chicago, IL', destination: 'Memphis, TN' },
+          equipment: ['V'],
+          weight: 45000,
+          rate: null,
+          publishedAt: null,
+          reference: 'TRUCK-1',
+        },
+        routeMetrics: {} as any,
+      } as any,
+      {
+        matchPostId: 'truck-4',
+        matchPostType: 'carrierPost',
+        score: 0.86,
+        scoreBreakdown: {} as any,
+        summary: {
+          companyId: 'carrier-company-4',
+          publisherId: 'carrier-user-4',
+          lane: { origin: 'Chicago, IL', destination: 'Houston, TX' },
+          equipment: ['V'],
+          weight: 45000,
+          rate: null,
+          publishedAt: null,
+          reference: 'TRUCK-4',
+        },
+        routeMetrics: {} as any,
+      } as any,
+    ];
+    component.chatbbPrompt = 'show information on il-Houston,TX';
+
+    component.submitMatchingConsole();
+
+    expect(brainApi.sendPrompt).not.toHaveBeenCalled();
+    expect(component.chatbbLoading).toBeFalse();
+    expect(component.chatbbPrompt).toBe('');
+    const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
+    expect(answer).toContain('Chicago, IL');
+    expect(answer).toContain('Houston, TX');
+    expect(answer).toContain('book match 2');
+  });
+
+  it('stages pasted import rows for review instead of posting immediately', () => {
+    const postsApi = {
+      createBrokerPost: jasmine.createSpy('createBrokerPost'),
+    };
+    const component = createComponent({ postsApi, dispatchIntake: new DispatchIntakeService() });
+    component.user = userWithRole('broker');
+
+    component.importMatchingConsoleText(
+      [
+        'Origin | Destination | Equipment | Weight | Rate',
+        'Chicago, IL to Jacksonville, FL V53 42000 lbs $2500',
+        'Memphis, TN to Houston, TX reefer 41000 lbs $2200',
+        'Need one more tomorrow but I forgot the cities',
+      ].join('\n'),
+      'pasted load list'
+    );
+
+    expect(postsApi.createBrokerPost).not.toHaveBeenCalled();
+    expect(component.pendingDispatchImport?.drafts.length).toBe(2);
+    const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
+    expect(answer).toContain('I read 2 draft loads');
+    expect(answer).toContain('1 row needs a little help');
+    expect(answer).toContain('approve import');
+  });
+
+  it('creates imported draft posts only after the user approves the import', () => {
+    const postsApi = {
+      createBrokerPost: jasmine.createSpy('createBrokerPost').and.returnValue(of(createPost({ _id: 'imported-load-1' }))),
+      getBrokerPosts: jasmine.createSpy('getBrokerPosts').and.returnValue(of([])),
+      getCarrierPosts: jasmine.createSpy('getCarrierPosts').and.returnValue(of([])),
+    };
+    const locationApi = {
+      geocodePlace: jasmine.createSpy('geocodePlace').and.returnValue(of({
+        found: true,
+        location: { lat: 41.8781, lng: -87.6298 },
+      })),
+    };
+    const component = createComponent({
+      postsApi,
+      locationApi,
+      dispatchIntake: new DispatchIntakeService(),
+      loadsApi: { getCompanyLoads: jasmine.createSpy('getCompanyLoads').and.returnValue(of([])) },
+      matchingApi: { listAssistantEvents: jasmine.createSpy('listAssistantEvents').and.returnValue(of([])) },
+      chatbbApi: { getRuntimeStatus: jasmine.createSpy('getRuntimeStatus').and.returnValue(of(null)) },
+      messagesApi: { getNewMessageDot: jasmine.createSpy('getNewMessageDot').and.returnValue(of([])) },
+    });
+    component.user = userWithRole('broker');
+    component.importMatchingConsoleText('Chicago, IL to Jacksonville, FL V53 42000 lbs $2500', 'pasted load list');
+
+    component.chatbbPrompt = 'approve import';
+    component.submitMatchingConsole();
+
+    expect(postsApi.createBrokerPost).toHaveBeenCalledTimes(1);
+    expect(component.pendingDispatchImport).toBeNull();
+    expect(component.matchingConsoleMessages.at(-1)?.text).toContain('I posted 1 load from the approved import');
+  });
+
   it('routes market map questions through Prometheus Brain instead of opening route intelligence', () => {
     const brainApi = {
       sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(of({
@@ -1071,6 +1242,59 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(routePanel.routeProvider).toContain('fallback');
     expect(Array.isArray(routePanel.hazmatNotes)).toBeTrue();
     expect(routePanel.hazmatNotes.join(' ')).toContain('estimated until live routing provider data is connected');
+  });
+
+  it('builds an offline route preview from route intelligence labels', () => {
+    const component = createComponent();
+    component.user = userWithRole('broker');
+    component.activeTab = 'matching';
+    component.posts = [
+      createPost({
+        _id: 'load-1',
+        origin: { type: 'place', place: 'Chicago, IL' },
+        destination: { type: 'place', place: 'Memphis, TN' },
+        rate: 2500,
+        distance: 530,
+      }) as any,
+    ];
+    component.selectedPostId = 'load-1';
+    component.matchCandidates = [
+      {
+        matchPostId: 'truck-1',
+        matchPostType: 'carrierPost',
+        score: 0.9,
+        scoreBreakdown: { laneFit: 1, equipmentFit: 1, weightFit: 1, freshnessFit: 1, rateFit: 1 },
+        summary: {
+          companyId: 'carrier-company-1',
+          publisherId: 'carrier-user',
+          lane: { origin: 'Gary, IN', destination: 'Memphis, TN' },
+          equipment: ['V'],
+          weight: 43000,
+          rate: null,
+          publishedAt: new Date().toISOString(),
+          reference: 'TRUCK-1',
+        },
+        routeMetrics: {
+          originDeadheadMiles: 29,
+          destinationDeadheadMiles: null,
+          tripMiles: 565,
+          totalPracticalMiles: 594,
+          estimatedDriveMinutes: 540,
+          provider: 'fallback-routing',
+        },
+      } as any,
+    ];
+
+    component.chatbbPrompt = 'show route for match 1';
+    component.submitMatchingConsole();
+
+    const routePanel = (component as any).routeIntelligencePanel;
+    expect(routePanel.previewMode).toBe('offline');
+    expect(routePanel.previewPoints.map((point: any) => point.kind)).toEqual(['truck', 'pickup', 'delivery']);
+    expect(routePanel.previewPoints.map((point: any) => point.label)).toEqual(['Gary, IN', 'Chicago, IL', 'Memphis, TN']);
+    expect(routePanel.previewSegments.map((segment: any) => segment.kind)).toEqual(['deadhead', 'loaded']);
+    expect(routePanel.previewSegments[0].points).toEqual('15,64 36,43');
+    expect(routePanel.previewSegments[1].points).toEqual('36,43 86,34');
   });
 
   it('uses the selected broker load lane when a matching carrier truck has a different location', () => {
@@ -1599,6 +1823,84 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(component.loadError).toContain('driver save failed');
   });
 
+  it('requests access to a coworker load through the Loads API', () => {
+    const requestedLoad = createLoad({
+      dispatch: {
+        assignedDispatcherId: 'owner-user',
+        assignedDispatcherName: 'Owner Dispatcher',
+        assignedDispatcherEmail: 'owner@prometheus.test',
+      },
+      accessRequests: [{
+        id: 'access-1',
+        requestedById: 'carrier-user',
+        requestedByName: 'Test User',
+        requestedByEmail: 'carrier@prometheus.test',
+        requestedAt: '2026-05-18T12:00:00.000Z',
+        targetDispatcherId: 'owner-user',
+        targetDispatcherName: 'Owner Dispatcher',
+        status: 'pending',
+      }],
+    });
+    const loadsApi = {
+      requestLoadAccess: jasmine.createSpy('requestLoadAccess').and.returnValue(of(requestedLoad)),
+    };
+    const component = createComponent({ loadsApi });
+    component.user = userWithRole('carrier');
+    component.loads = [createLoad({
+      dispatch: {
+        assignedDispatcherId: 'owner-user',
+        assignedDispatcherName: 'Owner Dispatcher',
+        assignedDispatcherEmail: 'owner@prometheus.test',
+      },
+    }) as any];
+    const item = (component as any).buildLoadBoardItem(component.loads[0]);
+
+    component.requestTeamLoadAccess(item);
+
+    expect(loadsApi.requestLoadAccess).toHaveBeenCalledWith('load-1', {
+      note: 'Requesting access from Loads Console.',
+    });
+    expect(component.loads[0].accessRequests?.[0].status).toBe('pending');
+    expect(component.loadMessage).toContain('Access request sent');
+    expect(component.accessRequestLoad).toBeNull();
+  });
+
+  it('approves a pending coworker load access request and moves the load to that dispatcher', () => {
+    const pendingRequest = {
+      id: 'access-1',
+      requestedById: 'carrier-user',
+      requestedByName: 'Test User',
+      requestedByEmail: 'carrier@prometheus.test',
+      requestedAt: '2026-05-18T12:00:00.000Z',
+      targetDispatcherId: 'broker-user',
+      targetDispatcherName: 'Test User',
+      status: 'pending',
+    };
+    const approvedLoad = createLoad({
+      dispatch: {
+        assignedDispatcherId: 'carrier-user',
+        assignedDispatcherName: 'Test User',
+        assignedDispatcherEmail: 'carrier@prometheus.test',
+      },
+      accessRequests: [{ ...pendingRequest, status: 'approved' }],
+    });
+    const loadsApi = {
+      decideLoadAccess: jasmine.createSpy('decideLoadAccess').and.returnValue(of(approvedLoad)),
+    };
+    const component = createComponent({ loadsApi });
+    component.user = userWithRole('broker');
+    component.loads = [createLoad({ accessRequests: [pendingRequest] }) as any];
+    const item = (component as any).buildLoadBoardItem(component.loads[0]);
+
+    component.decideTeamLoadAccess(item, pendingRequest as any, 'approve');
+
+    expect(loadsApi.decideLoadAccess).toHaveBeenCalledWith('load-1', 'access-1', { action: 'approve' });
+    expect(component.loads[0].dispatch.assignedDispatcherId).toBe('carrier-user');
+    expect(component.myActiveLoads.length).toBe(0);
+    expect(component.teamActiveLoads.length).toBe(1);
+    expect(component.loadMessage).toContain('Access approved');
+  });
+
   it('offers setup provider buttons and turns setup green after selection', () => {
     const component = createComponent();
     component.user = userWithRole('carrier');
@@ -2079,6 +2381,29 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(component.directContacts.some((entry) => entry.roomId === 'room-1' && entry.companyName === 'Coyote Logistics')).toBeTrue();
     expect(component.selectedBrokerContactId).toBe('contact-room-1');
     expect(component.activeDirectConsoleView).toBe('main');
+  });
+
+  it('sends Main chat messages locally for preview broker rooms', () => {
+    const messagesApi = {
+      createMessage: jasmine.createSpy('createMessage').and.returnValue(throwError(() => new Error('preview room'))),
+    };
+    const component = createComponent({ messagesApi });
+    component.user = userWithRole('carrier');
+    component.activeTab = 'direct';
+    component.activeDirectConsoleView = 'main';
+    component.previewDirectRooms = (component as any).createPreviewBookingRooms(null);
+    component.selectedRoomId = 'preview-room-1';
+    component.selectedBrokerContactId = 'preview-room-1';
+    component.directMessage = 'op';
+
+    component.sendDirectMessage();
+
+    expect(messagesApi.createMessage).not.toHaveBeenCalled();
+    expect(component.directMessage).toBe('');
+    expect(component.selectedBrokerRoom?.messages.at(-1)).toEqual(jasmine.objectContaining({
+      text: 'op',
+      role: 'carrier',
+    }));
   });
 
   it('mutes a selected Direct Chat contact while keeping it visible', () => {

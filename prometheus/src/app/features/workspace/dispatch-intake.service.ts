@@ -34,6 +34,18 @@ export interface DispatchParseResult {
   error: string | null;
 }
 
+export interface DispatchImportRejectedRow {
+  line: string;
+  reason: string;
+  index: number;
+}
+
+export interface DispatchImportParseResult {
+  drafts: ParsedDispatchDraft[];
+  rejected: DispatchImportRejectedRow[];
+  ignored: string[];
+}
+
 type EquipmentPreset = {
   preset: string;
   codes: string[];
@@ -133,8 +145,50 @@ export class DispatchIntakeService {
     return { draft, error: null };
   }
 
+  parseBatch(role: WorkspaceRole, input: string): DispatchImportParseResult {
+    const drafts: ParsedDispatchDraft[] = [];
+    const rejected: DispatchImportRejectedRow[] = [];
+    const ignored: string[] = [];
+    const lines = this.importLines(input);
+
+    lines.forEach((line, index) => {
+      if (this.isImportHeader(line)) {
+        ignored.push(line);
+        return;
+      }
+
+      const parsed = this.parse(role, line);
+      if (parsed.draft) {
+        drafts.push(parsed.draft);
+        return;
+      }
+
+      rejected.push({
+        line,
+        reason: parsed.error || 'Prometheus could not find enough lane details in this row.',
+        index,
+      });
+    });
+
+    return { drafts, rejected, ignored };
+  }
+
   private normalizeInput(input: string): string {
     return input.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  private importLines(input: string): string[] {
+    return input
+      .split(/\r?\n|;/)
+      .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
+      .filter(Boolean);
+  }
+
+  private isImportHeader(line: string): boolean {
+    const normalized = line.toLowerCase();
+    const hasLaneHeaders = normalized.includes('origin') && normalized.includes('destination');
+    const hasStopHeaders = normalized.includes('pickup') && normalized.includes('delivery');
+    return hasLaneHeaders || hasStopHeaders;
   }
 
   private parseQuantity(input: string, role: WorkspaceRole): number {
@@ -162,8 +216,15 @@ export class DispatchIntakeService {
 
   private parseOrigin(input: string, role: WorkspaceRole): DispatchPlaceDraft | null {
     const patterns = role === 'carrier'
-      ? [/\b(?:in|out of|from)\s+([a-z .'-]+),\s*([a-z]{2})\b/i]
-      : [/\bfrom\s+([a-z .'-]+),\s*([a-z]{2})\b/i, /\bin\s+([a-z .'-]+),\s*([a-z]{2})\b/i];
+      ? [
+          /\b(?:in|out of|from)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+          /\b(?:post|create|add|check)?\s*(?:\d+\s+)?(?:truck|trucks|driver|drivers|unit)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+        ]
+      : [
+          /\bfrom\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+          /\bin\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+          /\b(?:post|create|add)?\s*(?:\d+\s+)?(?:hazmat\s+)?(?:load|loads|shipment|shipments)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+        ];
 
     for (const pattern of patterns) {
       const match = input.match(pattern);

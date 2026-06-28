@@ -952,8 +952,7 @@
 .load-library-tab,
 .load-library-metrics article,
 .load-library-panel,
-.loads-ops-column,
-.access-request-card {
+.loads-ops-column {
   border: 1px solid var(--line);
   background: rgba(9, 22, 36, 0.9);
 }
@@ -1195,6 +1194,26 @@
   }
 }
 
+.load-access-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(74, 201, 255, 0.18);
+}
+
+.load-access-panel__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted-strong);
+  font-weight: 800;
+
+  span {
+    min-width: 0;
+  }
+}
+
 .company-load-owner {
   display: flex;
   justify-content: space-between;
@@ -1207,47 +1226,6 @@
     font-weight: 900;
     letter-spacing: 0.13em;
     text-transform: uppercase;
-  }
-}
-
-.access-request-card {
-  display: grid;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 16px;
-  border-radius: 20px;
-
-  h3 {
-    margin: 8px 0 6px;
-    font-size: 22px;
-  }
-
-  p {
-    margin: 0;
-    color: var(--muted);
-    line-height: 1.5;
-  }
-
-  label {
-    display: grid;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-
-  input {
-    min-height: 48px;
-    padding: 0 14px;
-    border-radius: 14px;
-    border: 1px solid var(--input-border);
-    background: #41546b;
-    color: var(--text);
-    font-size: 16px;
-    letter-spacing: 0.03em;
-    text-transform: none;
   }
 }
 

@@ -12,6 +12,9 @@ describe("parsePrometheusBrainPrompt", () => {
     expect(parsePrometheusBrainPrompt("show me a map with deadhead miles")).toMatchObject({
       intent: "map",
     });
+    expect(parsePrometheusBrainPrompt("show route from Chicago, IL to Memphis, TN")).toMatchObject({
+      intent: "map",
+    });
   });
 
   it("classifies approval-required communication drafts", () => {
@@ -35,6 +38,18 @@ describe("parsePrometheusBrainPrompt", () => {
   it("classifies hazmat operational questions", () => {
     expect(parsePrometheusBrainPrompt("can I transport 1.3 hazmat with this other product?")).toMatchObject({
       intent: "hazmatQuestion",
+    });
+    expect(parsePrometheusBrainPrompt("what should I check before moving a hazmat load through a route with tunnels?")).toMatchObject({
+      intent: "hazmatQuestion",
+    });
+    expect(parsePrometheusBrainPrompt("what should a dispatcher check before accepting a hazmat shipment?")).toMatchObject({
+      intent: "hazmatQuestion",
+    });
+  });
+
+  it("keeps hazmat search prompts as search when the user asks to find loads or trucks", () => {
+    expect(parsePrometheusBrainPrompt("find me hazmat loads out of Chicago under 44000 lbs")).toMatchObject({
+      intent: "search",
     });
   });
 });

@@ -42,6 +42,7 @@ describe("CompanyIntegrationsService", () => {
         FMCSA_AUTHORITY_VALIDATION: "datahub",
         STRIPE_API_KEY: "sk_test_live_enough",
         MAIL_HOST: "127.0.0.1",
+        MAIL_USER: "prometheus@local.test",
         OPENAI_BASE_URL: "http://127.0.0.1:1234/v1",
         OPENAI_API_KEY: "lm-studio",
         AgmCoreModule: ""
@@ -49,6 +50,22 @@ describe("CompanyIntegrationsService", () => {
       return values[key];
     });
   });
+
+  function enableSandboxProviders() {
+    configService.get.mockImplementation((key: string) => {
+      const values: Record<string, string> = {
+        FMCSA_AUTHORITY_VALIDATION: "datahub",
+        STRIPE_API_KEY: "sk_test_live_enough",
+        MAIL_HOST: "127.0.0.1",
+        MAIL_USER: "prometheus@local.test",
+        OPENAI_BASE_URL: "http://127.0.0.1:1234/v1",
+        OPENAI_API_KEY: "lm-studio",
+        AgmCoreModule: "",
+        PROMETHEUS_SANDBOX_PROVIDERS: "1"
+      };
+      return values[key];
+    });
+  }
 
   it("returns provider catalog with configured platform readiness and contracted trucking providers", () => {
     const result = service().listProviderCatalog();
@@ -65,6 +82,16 @@ describe("CompanyIntegrationsService", () => {
           provider: "stripe",
           status: "ready",
           freeTier: "paid"
+        }),
+        expect.objectContaining({
+          provider: "smtp",
+          status: "ready",
+          freeTier: "local"
+        }),
+        expect.objectContaining({
+          provider: "openai",
+          status: "ready",
+          freeTier: "local"
         }),
         expect.objectContaining({
           provider: "google_maps",
@@ -94,6 +121,41 @@ describe("CompanyIntegrationsService", () => {
           category: "loadboard",
           provider: "dat",
           status: "requires_contract"
+        })
+      ])
+    );
+  });
+
+  it("marks contracted trucking providers as local sandbox previews when sandbox mode is enabled", () => {
+    enableSandboxProviders();
+
+    const result = service().listProviderCatalog();
+
+    expect(result.company).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "highway",
+          status: "ready",
+          freeTier: "local",
+          notes: expect.stringContaining("Sandbox preview")
+        }),
+        expect.objectContaining({
+          provider: "macropoint",
+          status: "ready",
+          freeTier: "local",
+          notes: expect.stringContaining("Sandbox preview")
+        }),
+        expect.objectContaining({
+          provider: "samsara",
+          status: "ready",
+          freeTier: "local",
+          notes: expect.stringContaining("Sandbox preview")
+        }),
+        expect.objectContaining({
+          provider: "dat",
+          status: "ready",
+          freeTier: "local",
+          notes: expect.stringContaining("Sandbox preview")
         })
       ])
     );
@@ -319,6 +381,36 @@ describe("CompanyIntegrationsService", () => {
     expect(result.trackingChoices[1]).not.toHaveProperty("credentialRef");
   });
 
+  it("returns sandbox setup, tracking, and ELD room choices when no live integrations are connected", async () => {
+    enableSandboxProviders();
+    brokerPostModel.findById.mockReturnValue(leanResult({ _id: "broker-post-1", companyId: "broker-company-1" }));
+    carrierPostModel.findById.mockReturnValue(leanResult({ _id: "carrier-post-1", companyId: "carrier-company-1" }));
+    companyModel.find.mockReturnValue(leanResult([{ _id: "broker-company-1", integrations: [] }, { _id: "carrier-company-1", integrations: [] }]));
+
+    const result = await service().getRoomIntegrationChoices(
+      {
+        brokerPostId: "broker-post-1",
+        carrierPostId: "carrier-post-1"
+      },
+      roomUser
+    );
+
+    expect(result.setupChoices).toEqual([
+      expect.objectContaining({ provider: "highway", label: "Broker Highway Demo", source: "broker", category: "setup" }),
+      expect.objectContaining({ provider: "mycarrierpacket", label: "Broker MyCarrierPackets Demo", source: "broker", category: "setup" }),
+      expect.objectContaining({ provider: "truckstop", label: "Broker Truckstop Setup Demo", source: "broker", category: "setup" })
+    ]);
+    expect(result.trackingChoices).toEqual([
+      expect.objectContaining({ provider: "macropoint", label: "Broker MacroPoint Demo", source: "broker", category: "tracking" }),
+      expect.objectContaining({ provider: "fourkites", label: "Broker FourKites Demo", source: "broker", category: "tracking" }),
+      expect.objectContaining({ provider: "tql", label: "Broker TQL Tracking Demo", source: "broker", category: "tracking" }),
+      expect.objectContaining({ provider: "samsara", label: "Carrier Samsara ELD Demo", source: "carrier", category: "eld" }),
+      expect.objectContaining({ provider: "motive", label: "Carrier Motive ELD Demo", source: "carrier", category: "eld" }),
+      expect.objectContaining({ provider: "geotab", label: "Carrier Geotab ELD Demo", source: "carrier", category: "eld" }),
+      expect.objectContaining({ provider: "manual", label: "Manual tracking update", source: "manual", category: "manual" })
+    ]);
+  });
+
   it("stages a configured setup provider execution for a booking room", async () => {
     brokerPostModel.findById.mockReturnValue(leanResult({ _id: "broker-post-1", companyId: "broker-company-1" }));
     carrierPostModel.findById.mockReturnValue(leanResult({ _id: "carrier-post-1", companyId: "carrier-company-1" }));
@@ -397,6 +489,37 @@ describe("CompanyIntegrationsService", () => {
     );
     expect(result.message).toContain("MacroPoint tracking is staged");
     expect(result.message).toContain("Company Integrations");
+  });
+
+  it("stages sandbox tracking execution with a demo reference", async () => {
+    enableSandboxProviders();
+    brokerPostModel.findById.mockReturnValue(leanResult({ _id: "broker-post-1", companyId: "broker-company-1" }));
+    carrierPostModel.findById.mockReturnValue(leanResult({ _id: "carrier-post-1", companyId: "carrier-company-1" }));
+    companyModel.find.mockReturnValue(leanResult([{ _id: "broker-company-1", integrations: [] }, { _id: "carrier-company-1", integrations: [] }]));
+
+    const result = await service().executeRoomIntegration(
+      {
+        brokerPostId: "broker-post-1",
+        carrierPostId: "carrier-post-1",
+        category: "tracking",
+        provider: "macropoint",
+        source: "broker"
+      },
+      roomUser
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "staged",
+        mode: "placeholder",
+        provider: "macropoint",
+        label: "Broker MacroPoint Demo",
+        category: "tracking",
+        source: "broker"
+      })
+    );
+    expect(result.message).toContain("Sandbox preview");
+    expect(result.message).toContain("DEMO-MACROPOINT-BROKER");
   });
 
   it("does not call a connected tracking provider live until credential metadata exists", async () => {

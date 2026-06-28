@@ -22,6 +22,25 @@ import {
   UpsertCompanyIntegrationDTO
 } from "./dto/company-integration.dto";
 
+type SandboxRoomProviderDefinition = {
+  category: CompanyIntegrationCategory;
+  provider: string;
+  label: string;
+  source: "broker" | "carrier";
+};
+
+const SANDBOX_ROOM_PROVIDERS: SandboxRoomProviderDefinition[] = [
+  { category: "setup", provider: "highway", label: "Broker Highway Demo", source: "broker" },
+  { category: "setup", provider: "mycarrierpacket", label: "Broker MyCarrierPackets Demo", source: "broker" },
+  { category: "setup", provider: "truckstop", label: "Broker Truckstop Setup Demo", source: "broker" },
+  { category: "tracking", provider: "macropoint", label: "Broker MacroPoint Demo", source: "broker" },
+  { category: "tracking", provider: "fourkites", label: "Broker FourKites Demo", source: "broker" },
+  { category: "tracking", provider: "tql", label: "Broker TQL Tracking Demo", source: "broker" },
+  { category: "eld", provider: "samsara", label: "Carrier Samsara ELD Demo", source: "carrier" },
+  { category: "eld", provider: "motive", label: "Carrier Motive ELD Demo", source: "carrier" },
+  { category: "eld", provider: "geotab", label: "Carrier Geotab ELD Demo", source: "carrier" }
+];
+
 @Injectable()
 export class CompanyIntegrationsService {
   constructor(
@@ -36,8 +55,8 @@ export class CompanyIntegrationsService {
       platform: [
         this.platformProvider("fmcsa", "FMCSA authority data", "free", ["FMCSA_AUTHORITY_VALIDATION"], this.fmcsaStatus(), "DOT/MC authority checks during signup."),
         this.platformProvider("stripe", "Stripe payments", "paid", ["STRIPE_API_KEY", "STRIPE_WEBHOOKS_KEY"], this.envStatus(["STRIPE_API_KEY"], "sk_test_local_placeholder"), "Company subscriptions, plan validation, and payment setup."),
-        this.platformProvider("smtp", "Email delivery", "paid", ["MAIL_HOST", "MAIL_USER", "MAIL_PASSWORD"], this.envStatus(["MAIL_HOST"]), "Setup approval emails, company invites, and Brain-approved outbound email."),
-        this.platformProvider("openai", "AI model gateway", "local", ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"], this.envStatus(["OPENAI_BASE_URL", "OPENAI_API_KEY"], "lm-studio"), "Prometheus Brain can use local LM Studio now or cloud OpenAI later."),
+        this.platformProvider("smtp", "Email delivery", "local", ["MAIL_HOST", "MAIL_USER", "MAIL_PASSWORD"], this.envStatus(["MAIL_HOST", "MAIL_USER"]), "Local Mailpit can capture setup approval emails, company invites, and Brain-approved outbound email during testing."),
+        this.platformProvider("openai", "AI model gateway", "local", ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"], this.envStatus(["OPENAI_BASE_URL", "OPENAI_API_KEY"]), "Prometheus Brain can use local LM Studio now or cloud OpenAI later."),
         this.platformProvider("google_maps", "Google Maps routing", "paid", ["AgmCoreModule", "GOOGLE_MAPS_API_KEY"], this.anyEnvStatus(["AgmCoreModule", "GOOGLE_MAPS_API_KEY"]), "Route maps, deadhead miles, loaded miles, and later route-risk checks."),
         this.platformProvider("file_storage", "Document storage", "paid", ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY"], this.envStatus(["S3_ENDPOINT", "S3_BUCKET"]), "Authority files, insurance certificates, setup packets, and accessorial documents.")
       ],
@@ -147,14 +166,18 @@ export class CompanyIntegrationsService {
   async getRoomIntegrationChoices(query: RoomIntegrationChoicesQueryDTO, user: any): Promise<RoomIntegrationChoicesDTO> {
     const { brokerCompany, carrierCompany } = await this.resolveRoomIntegrationContext(query, user);
 
-    const setupChoices = [
+    const liveSetupChoices = [
       ...this.activeIntegrations(brokerCompany, "setup").map((integration) => this.toChoice(integration, "broker", "Broker")),
       ...this.activeIntegrations(carrierCompany, "setup").map((integration) => this.toChoice(integration, "carrier", "Carrier"))
     ];
 
-    const trackingChoices = [
+    const liveTrackingChoices = [
       ...this.activeIntegrations(brokerCompany, "tracking").map((integration) => this.toChoice(integration, "broker", "Broker")),
-      ...this.activeIntegrations(carrierCompany, "eld").map((integration) => this.toChoice(integration, "carrier", "Carrier")),
+      ...this.activeIntegrations(carrierCompany, "eld").map((integration) => this.toChoice(integration, "carrier", "Carrier"))
+    ];
+    const setupChoices = liveSetupChoices.length ? liveSetupChoices : this.sandboxSetupChoices();
+    const trackingChoices = [
+      ...(liveTrackingChoices.length ? liveTrackingChoices : this.sandboxTrackingChoices()),
       this.manualTrackingChoice()
     ];
 
@@ -175,9 +198,12 @@ export class CompanyIntegrationsService {
     const source = this.normalizeExecutionSource(body.source);
     const executionIntegration = this.findExecutionIntegration(brokerCompany, carrierCompany, category, provider, source);
     const integration = executionIntegration?.integration ?? null;
-    const integrationSource = executionIntegration?.source ?? source;
+    const sandboxProvider = integration ? null : this.findSandboxRoomProvider(category, provider, source);
+    const integrationSource = executionIntegration?.source ?? sandboxProvider?.source ?? source;
     const label = integration
       ? this.withSourcePrefix(integration.label, integrationSource === "carrier" ? "Carrier" : "Broker")
+      : sandboxProvider
+        ? sandboxProvider.label
       : this.optionalTrim(body.label) ?? this.providerDisplayLabel(provider);
     const mode = this.executionModeFor(category, provider, integration);
 
@@ -189,7 +215,7 @@ export class CompanyIntegrationsService {
       category,
       source: integrationSource,
       setupUrl: integration?.setupUrl,
-      message: this.executionMessage(category, label, mode, integration)
+      message: this.executionMessage(category, label, mode, integration, sandboxProvider)
     };
   }
 
@@ -389,6 +415,54 @@ export class CompanyIntegrationsService {
     };
   }
 
+  private sandboxSetupChoices(): RoomIntegrationChoiceDTO[] {
+    return this.sandboxRoomChoices("setup");
+  }
+
+  private sandboxTrackingChoices(): RoomIntegrationChoiceDTO[] {
+    return [
+      ...this.sandboxRoomChoices("tracking"),
+      ...this.sandboxRoomChoices("eld")
+    ];
+  }
+
+  private sandboxRoomChoices(category: CompanyIntegrationCategory): RoomIntegrationChoiceDTO[] {
+    if (!this.sandboxProvidersEnabled()) {
+      return [];
+    }
+    return SANDBOX_ROOM_PROVIDERS
+      .filter((provider) => provider.category === category)
+      .map((provider) => ({
+        source: provider.source,
+        category: provider.category,
+        provider: provider.provider,
+        label: provider.label
+      }));
+  }
+
+  private findSandboxRoomProvider(
+    category: RoomIntegrationChoiceCategory,
+    provider: string,
+    source: RoomIntegrationChoiceSource
+  ): SandboxRoomProviderDefinition | null {
+    if (!this.sandboxProvidersEnabled() || category === "manual" || provider === "manual") {
+      return null;
+    }
+    const normalizedProvider = this.normalizeProvider(provider);
+    const categoryCandidates: CompanyIntegrationCategory[] = category === "tracking"
+      ? ["tracking", "eld"]
+      : category === "eld"
+        ? ["eld"]
+        : category === "setup"
+          ? ["setup"]
+          : [];
+    return SANDBOX_ROOM_PROVIDERS.find((candidate) => (
+      categoryCandidates.includes(candidate.category)
+      && candidate.provider === normalizedProvider
+      && (source === "manual" || source === candidate.source)
+    )) ?? null;
+  }
+
   private normalizeExecutionCategory(category: RoomIntegrationChoiceCategory): RoomIntegrationChoiceCategory {
     return ["setup", "tracking", "eld", "manual"].includes(category) ? category : "manual";
   }
@@ -440,8 +514,14 @@ export class CompanyIntegrationsService {
     category: RoomIntegrationChoiceCategory,
     label: string,
     mode: "configured" | "placeholder" | "manual",
-    integration: CompanyIntegration | null
+    integration: CompanyIntegration | null,
+    sandboxProvider: SandboxRoomProviderDefinition | null = null
   ): string {
+    if (sandboxProvider) {
+      const kind = sandboxProvider.category === "setup" ? "setup" : "tracking";
+      return `Sandbox preview: ${label} ${kind} is staged with ${this.sandboxReference(sandboxProvider)}. No live vendor request was sent. Add real credentials in Company Integrations when you are ready to connect the provider.`;
+    }
+
     if (category === "setup") {
       const suffix = mode === "configured" && integration?.setupUrl
         ? " The setup portal link is ready for this booking."
@@ -457,6 +537,10 @@ export class CompanyIntegrationsService {
     }
 
     return `${label} is staged as a manual booking step.`;
+  }
+
+  private sandboxReference(provider: SandboxRoomProviderDefinition): string {
+    return `DEMO-${provider.provider.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-${provider.source.toUpperCase()}`;
   }
 
   private sanitizeIntegration(integration: CompanyIntegration): CompanyIntegrationResponseDTO {
@@ -508,6 +592,17 @@ export class CompanyIntegrationsService {
     freeTier: ProviderCatalogItemDTO["freeTier"],
     notes: string
   ): ProviderCatalogItemDTO {
+    if (this.sandboxProvidersEnabled()) {
+      return {
+        category,
+        provider,
+        label,
+        status: "ready",
+        freeTier: "local",
+        notes: `Sandbox preview: ${notes}`
+      };
+    }
+
     return {
       category,
       provider,
@@ -516,6 +611,11 @@ export class CompanyIntegrationsService {
       freeTier,
       notes
     };
+  }
+
+  private sandboxProvidersEnabled(): boolean {
+    const value = this.configService?.get<string>("PROMETHEUS_SANDBOX_PROVIDERS")?.trim().toLowerCase();
+    return value === "1" || value === "true" || value === "yes" || value === "on";
   }
 
   private fmcsaStatus(): ProviderCatalogItemDTO["status"] {

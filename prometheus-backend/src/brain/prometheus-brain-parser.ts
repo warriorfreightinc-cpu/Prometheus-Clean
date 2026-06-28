@@ -36,6 +36,10 @@ export function parsePrometheusBrainPrompt(
     return { intent: "bookingApproval", normalizedPrompt };
   }
 
+  if (isHazmatOperationalQuestion(lower)) {
+    return { intent: "hazmatQuestion", normalizedPrompt };
+  }
+
   if (/\b(map|route|deadhead|loaded miles|tolls|fuel|avoid tolls)\b/.test(lower)) {
     return { intent: "map", normalizedPrompt };
   }
@@ -61,4 +65,23 @@ export function parsePrometheusBrainPrompt(
   }
 
   return { intent: "generalTransportation", normalizedPrompt };
+}
+
+function isHazmatOperationalQuestion(lower: string): boolean {
+  const hazmatContext =
+    /\b(hazmat|placard|placarding|compatible|compatibility|segregation|1\.3|tanker|tunnel|tunnels|shipment)\b/.test(lower) ||
+    /\bcan i transport\b/.test(lower);
+
+  if (!hazmatContext) {
+    return false;
+  }
+
+  const asksForReview =
+    /\b(can i|can we|should|check|verify|review|accepting|moving|transport|allowed|legal|permit|permits|restriction|restrictions|through)\b/.test(lower);
+
+  const explicitlySearching =
+    /\b(find|search|show|list|available|anything|loads?|trucks?|out of|near|from|last|past|under)\b/.test(lower) &&
+    !asksForReview;
+
+  return asksForReview && !explicitlySearching;
 }

@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import OpenAI from "openai";
 import { AgentCommandService } from "../matching/agent-command.service";
+import { RoutingIntelligenceRequestDTO } from "../routing/dto/routing-intelligence.dto";
+import { RoutingIntelligenceService } from "../routing/routing-intelligence.service";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
 import { BrainMemoryService } from "./brain-memory.service";
@@ -28,7 +30,8 @@ export class PrometheusBrainService {
     private readonly events: BrainEventService,
     private readonly approvals: BrainApprovalService,
     private readonly memory: BrainMemoryService,
-    private readonly agentCommands: AgentCommandService
+    private readonly agentCommands: AgentCommandService,
+    private readonly routingIntelligence: RoutingIntelligenceService
   ) {}
 
   async handlePrompt(data: PrometheusBrainPromptDTO, user: any) {
@@ -63,8 +66,12 @@ export class PrometheusBrainService {
       intent: parsed.intent,
     });
 
-    if (parsed.intent === "search" || parsed.intent === "map") {
+    if (parsed.intent === "search") {
       return this.handleSearchIntent(prompt, source, data, user, companyId, userId, role, parsed.intent);
+    }
+
+    if (parsed.intent === "map") {
+      return this.handleMapIntent(prompt, source, data, companyId, userId, role);
     }
 
     if (parsed.intent === "draftEmail") {
@@ -138,6 +145,28 @@ export class PrometheusBrainService {
         answer:
           "I prepared this memory for approval. I will not save it until an authorized user approves it.",
         approval: request,
+      };
+    }
+
+    if (parsed.intent === "hazmatQuestion") {
+      const answer = this.renderKnowledgeAnswer(parsed.intent, prompt);
+      const event = await this.events.record({
+        companyId,
+        userId,
+        role,
+        source,
+        type: "suggestionShown",
+        prompt,
+        intent: parsed.intent,
+        tool: "deterministicHazmatSafetyAnswer",
+        message: answer,
+      });
+
+      return {
+        handled: true,
+        intent: parsed.intent,
+        answer,
+        eventId: String(event?._id ?? ""),
       };
     }
 
@@ -220,8 +249,11 @@ export class PrometheusBrainService {
   private buildBrainSystemPrompt() {
     return [
       "You are Prometheus, a hazmat transportation assistant for U.S. brokers, carriers, dispatchers, and company admins.",
-      "Sound like a calm dispatcher assistant, not a terminal or generic chatbot.",
+      "Sound warm, direct, and human, like an assistant sitting beside the dispatcher during a busy operations day.",
+      "Never sound like a terminal, script, or generic chatbot.",
       "Help with hazmat matching, equipment fit, pickup timing, route context, rate thinking, driver risk, written-trail decisions, and next-step suggestions.",
+      "Acknowledge what the user is trying to do before giving steps, especially when they sound frustrated or casual.",
+      "Ask one practical follow-up question when a request is missing lane, equipment, timing, contact, or approval details.",
       "Do not execute booking, email, chat, setup, tracking, dispatch, or compliance actions without human approval.",
       "Do not invent live loads, trucks, tracking, ELD status, broker availability, rates, FMCSA facts, or legal conclusions.",
       "If the user asks for live board data that is not in context, say what Prometheus can check and what details you need.",
@@ -348,6 +380,41 @@ export class PrometheusBrainService {
     };
   }
 
+  private async handleMapIntent(
+    prompt: string,
+    source: PrometheusBrainSource,
+    data: PrometheusBrainPromptDTO,
+    companyId: string,
+    userId: string,
+    role: string
+  ) {
+    const routeIntelligence = await this.routingIntelligence.buildRouteIntelligence(
+      this.routeRequestFromPrompt(prompt)
+    );
+    const answer = this.renderRouteIntelligenceAnswer(routeIntelligence);
+    const event = await this.events.record({
+      companyId,
+      userId,
+      role,
+      source,
+      type: "suggestionShown",
+      prompt,
+      intent: "map",
+      tool: "routingIntelligence",
+      message: answer,
+      payload: routeIntelligence as any,
+      related: data.related,
+    });
+
+    return {
+      handled: true,
+      intent: "map",
+      answer,
+      eventId: String(event?._id ?? ""),
+      metadata: { routeIntelligence },
+    };
+  }
+
   private async createDraftApproval(input: {
     user: any;
     companyId: string;
@@ -396,5 +463,74 @@ export class PrometheusBrainService {
     }
 
     return "I can help with hazmat transportation questions, matching, drafts, booking approvals, route context, and written-trail decisions. Tell me the truck, load, city, date, weight, equipment, or action you want reviewed.";
+  }
+
+  private routeRequestFromPrompt(prompt: string): RoutingIntelligenceRequestDTO {
+    const route = this.extractRouteLabels(prompt);
+    return {
+      origin: route.origin ? { label: route.origin } : undefined,
+      destination: route.destination ? { label: route.destination } : undefined,
+      truckLocation: route.truckLocation ? { label: route.truckLocation } : undefined,
+      weightLbs: this.extractWeightLbs(prompt),
+      equipment: this.extractEquipment(prompt),
+    };
+  }
+
+  private extractRouteLabels(prompt: string) {
+    const text = String(prompt ?? "").replace(/\s+/g, " ").trim();
+    const routeMatch = text.match(/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:with\s+truck|truck\s+(?:in|at|near|from)|under|below|max(?:imum)?|less than|for)\b|$)/i);
+    const truckMatch = text.match(/\b(?:with\s+)?truck\s+(?:in|at|near|from)\s+(.+?)(?=\s+(?:under|below|max(?:imum)?|less than|for|with)\b|$)/i);
+
+    return {
+      origin: this.cleanRouteLabel(routeMatch?.[1]),
+      destination: this.cleanRouteLabel(routeMatch?.[2]),
+      truckLocation: this.cleanRouteLabel(truckMatch?.[1]),
+    };
+  }
+
+  private cleanRouteLabel(value: string | undefined): string | undefined {
+    const cleaned = String(value ?? "")
+      .replace(/[?.!,;:]+$/g, "")
+      .trim();
+    return cleaned || undefined;
+  }
+
+  private extractWeightLbs(prompt: string): number | null {
+    const match = String(prompt ?? "").match(/\b(?:under|below|max(?:imum)?|less than)\s+([\d,]+)\s*(?:lb|lbs|pounds)?\b/i);
+    if (!match) {
+      return null;
+    }
+    const weight = Number(match[1].replace(/,/g, ""));
+    return Number.isFinite(weight) ? weight : null;
+  }
+
+  private extractEquipment(prompt: string): string[] {
+    const lower = String(prompt ?? "").toLowerCase();
+    const equipment = new Set<string>();
+    if (/\brz\b|reefer/.test(lower)) equipment.add("RZ");
+    if (/\bvz\b|van/.test(lower)) equipment.add("VZ");
+    if (/\bflatbed|fb\b/.test(lower)) equipment.add("FB");
+    if (/\btanker\b/.test(lower)) equipment.add("Tanker");
+    return Array.from(equipment);
+  }
+
+  private renderRouteIntelligenceAnswer(route: any): string {
+    const lane = `${route.originLabel} to ${route.destinationLabel}`;
+    const miles = [
+      route.deadheadMiles !== null ? `deadhead ${Math.round(route.deadheadMiles).toLocaleString()} mi` : "deadhead pending",
+      route.loadedMiles !== null ? `loaded ${Math.round(route.loadedMiles).toLocaleString()} mi` : "loaded miles pending",
+      route.totalMiles !== null ? `total ${Math.round(route.totalMiles).toLocaleString()} mi` : "total miles pending",
+    ].join(", ");
+    const rpm = route.ratePerLoadedMile !== null
+      ? ` Estimated RPM: $${Number(route.ratePerLoadedMile).toFixed(2)}/mi.`
+      : "";
+    const warnings = Array.isArray(route.providerWarnings) && route.providerWarnings.length
+      ? ` Provider warning: ${route.providerWarnings.join(" ")}`
+      : "";
+    const notes = Array.isArray(route.hazmatNotes) && route.hazmatNotes.length
+      ? ` ${route.hazmatNotes.join(" ")}`
+      : "";
+
+    return `Route intelligence for ${lane}: ${miles}. Provider status: ${route.providerStatus} through ${route.routeProvider}.${rpm}${warnings}${notes}`;
   }
 }

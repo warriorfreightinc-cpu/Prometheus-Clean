@@ -90,6 +90,7 @@
         [pendingBrainApprovals]="pendingBrainApprovals"
         (chatbbPromptChange)="chatbbPrompt = $event"
         (submitConsole)="submitMatchingConsole()"
+        (importFileSelected)="handleMatchingImportFile($event)"
         (approveBrainRequest)="approveBrainRequest($event)"
         (rejectBrainRequest)="rejectBrainRequest($event)"
       ></app-ai-matching-console>
@@ -286,6 +287,16 @@
                     <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="updateLoadBoardStatus(item.loadId, 'readyToBill')">Ready to bill</button>
                   </div>
                 </div>
+
+                <div class="load-access-panel" *ngIf="item.pendingAccessRequests.length && item.canApproveAccess">
+                  <div class="load-access-panel__row" *ngFor="let request of item.pendingAccessRequests">
+                    <span>{{ request.requestedByName || 'Coworker' }} requested access</span>
+                    <div class="load-line-card__actions">
+                      <button type="button" class="ghost-button" [disabled]="loadActionPendingId === item.loadId" (click)="decideTeamLoadAccess(item, request, 'reject')">Reject</button>
+                      <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="decideTeamLoadAccess(item, request, 'approve')">Approve</button>
+                    </div>
+                  </div>
+                </div>
               </article>
             </div>
           </section>
@@ -329,28 +340,21 @@
                   <div class="load-line-card__actions">
                     <button type="button" class="ghost-button" (click)="openLoadBoardPost(item.ownPostId)">Open load</button>
                     <button type="button" class="ghost-button" (click)="openLoadBoardChat(item.ownPostId)">Open chat</button>
-                    <button type="button" class="primary-button" (click)="requestTeamLoadAccess(item)">Req access</button>
+                    <button type="button" class="ghost-button" *ngIf="item.myPendingAccessRequest" disabled>Request sent</button>
+                    <button type="button" class="primary-button" *ngIf="!item.myPendingAccessRequest && !item.canApproveAccess" [disabled]="loadActionPendingId === item.loadId" (click)="requestTeamLoadAccess(item)">Req access</button>
+                  </div>
+                </div>
+
+                <div class="load-access-panel" *ngIf="item.pendingAccessRequests.length && item.canApproveAccess">
+                  <div class="load-access-panel__row" *ngFor="let request of item.pendingAccessRequests">
+                    <span>{{ request.requestedByName || 'Coworker' }} requested access</span>
+                    <div class="load-line-card__actions">
+                      <button type="button" class="ghost-button" [disabled]="loadActionPendingId === item.loadId" (click)="decideTeamLoadAccess(item, request, 'reject')">Reject</button>
+                      <button type="button" class="primary-button" [disabled]="loadActionPendingId === item.loadId" (click)="decideTeamLoadAccess(item, request, 'approve')">Approve</button>
+                    </div>
                   </div>
                 </div>
               </article>
-            </div>
-
-            <div class="access-request-card" *ngIf="accessRequestLoad">
-              <div>
-                <div class="eyebrow">Access request</div>
-                <h3>{{ accessRequestLoad.reference }}</h3>
-                <p>{{ accessRequestLoad.dispatcherName }} must provide the verification number from their Prometheus pop-up.</p>
-              </div>
-
-              <label>
-                <span>Verification number</span>
-                <input type="text" [(ngModel)]="accessVerificationCode" placeholder="Enter code" />
-              </label>
-
-              <div class="load-line-card__actions">
-                <button type="button" class="ghost-button" (click)="cancelTeamLoadAccess()">Cancel</button>
-                <button type="button" class="primary-button" (click)="verifyTeamLoadAccess()">Verify access</button>
-              </div>
             </div>
           </section>
         </div>
@@ -506,6 +510,16 @@
                     (click)="beginTrackingAssist()"
                   >
                     Track
+                  </button>
+                  <button
+                    class="secondary-button status-button"
+                    type="button"
+                    [class.status-button--ready]="selectedRoomTrackingReady"
+                    [class.status-button--pending]="!selectedRoomTrackingReady"
+                    [disabled]="!selectedRoom"
+                    (click)="openSelectedBookingRouteMap()"
+                  >
+                    Route map
                   </button>
                   <button
                     class="secondary-button status-button"
@@ -847,6 +861,56 @@
           </div>
           <button type="button" class="ghost-button" (click)="closeRouteIntelligencePanel()">Close</button>
         </div>
+
+        <section class="message-banner route-preview" *ngIf="routeIntelligencePanel.previewPoints.length" style="margin-bottom: 18px;">
+          <div class="route-preview__header" style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px;">
+            <div>
+              <p class="eyebrow">Offline preview</p>
+              <h3 style="margin: 4px 0 0; font-size: 18px;">Route preview</h3>
+            </div>
+            <span style="color: #ffd9aa; font-size: 12px; font-weight: 700;">{{ routeIntelligencePanel.previewMode === 'offline' ? 'Local estimate' : routeIntelligencePanel.routeProvider }}</span>
+          </div>
+
+          <svg class="route-preview__map" viewBox="0 0 100 72" role="img" [attr.aria-label]="routePreviewAriaLabel()" style="width: 100%; min-height: 220px; aspect-ratio: 16 / 7; border-radius: 12px; background: #07111f;">
+            <path d="M6 49 C14 28 26 18 43 19 C55 20 61 9 75 14 C91 19 96 34 90 50 C85 66 66 67 50 60 C35 54 15 68 6 49 Z" fill="rgba(45,70,51,0.82)"></path>
+            <path d="M12 56 C26 45 36 48 48 38 C59 29 72 36 88 27" fill="none" stroke="rgba(221,232,241,0.22)" stroke-width="1.4" stroke-dasharray="3 4"></path>
+            <polyline
+              *ngFor="let segment of routeIntelligencePanel.previewSegments"
+              [attr.points]="segment.points"
+              [attr.stroke]="routePreviewSegmentColor(segment)"
+              [attr.stroke-width]="segment.kind === 'loaded' ? 2.8 : 2"
+              [attr.stroke-dasharray]="segment.kind === 'deadhead' ? '4 3' : null"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ></polyline>
+            <g *ngFor="let point of routeIntelligencePanel.previewPoints" class="route-preview__point">
+              <circle
+                [attr.cx]="point.x"
+                [attr.cy]="point.y"
+                r="4.8"
+                [attr.fill]="routePreviewPointColor(point)"
+                stroke="#07111f"
+                stroke-width="1.6"
+              ></circle>
+              <text [attr.x]="point.x" [attr.y]="point.y - 7" fill="#f2f7fb" font-size="4" font-weight="800" text-anchor="middle">{{ routePreviewShortLabel(point) }}</text>
+            </g>
+          </svg>
+
+          <ol class="route-preview__legend" style="display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 0; list-style: none;">
+            <li
+              *ngFor="let point of routeIntelligencePanel.previewPoints"
+              [class.route-preview__legend-item--truck]="point.kind === 'truck'"
+              [class.route-preview__legend-item--pickup]="point.kind === 'pickup'"
+              [class.route-preview__legend-item--stop]="point.kind === 'stop'"
+              [class.route-preview__legend-item--delivery]="point.kind === 'delivery'"
+              style="display: inline-flex; gap: 8px; align-items: center;"
+            >
+              <span [style.background]="routePreviewPointColor(point)" style="display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; color: #07111f;">{{ routePreviewShortLabel(point) }}</span>
+              <strong style="font-size: 13px;">{{ point.label }}</strong>
+            </li>
+          </ol>
+        </section>
 
         <div class="metric-grid metric-grid--loads-board">
           <div class="message-banner">

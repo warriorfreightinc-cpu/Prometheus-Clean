@@ -11,13 +11,23 @@ import {
 const EARTH_RADIUS_MILES = 3958.8;
 const TRUCKING_STRETCH_FACTOR = 1.17;
 const DEFAULT_TRUCK_SPEED_MPH = 47;
+const FALLBACK_CITY_GEOCODES: Record<string, RoutingGeocodeResult> = {
+  "baytown, tx": { label: "Baytown, TX", lat: 29.7355, lng: -94.9774 },
+  "chicago, il": { label: "Chicago, IL", lat: 41.8781, lng: -87.6298 },
+  "dallas, tx": { label: "Dallas, TX", lat: 32.7767, lng: -96.797 },
+  "gary, in": { label: "Gary, IN", lat: 41.5934, lng: -87.3464 },
+  "houston, tx": { label: "Houston, TX", lat: 29.7604, lng: -95.3698 },
+  "memphis, tn": { label: "Memphis, TN", lat: 35.1495, lng: -90.049 },
+  "nashville, tn": { label: "Nashville, TN", lat: 36.1627, lng: -86.7816 },
+  "pasadena, tx": { label: "Pasadena, TX", lat: 29.6911, lng: -95.2091 },
+};
 
 @Injectable()
 export class FallbackRoutingProvider implements RoutingProvider {
   readonly name = "fallback-routing";
 
-  async geocode(_query: string): Promise<RoutingGeocodeResult | null> {
-    return null;
+  async geocode(query: string): Promise<RoutingGeocodeResult | null> {
+    return FALLBACK_CITY_GEOCODES[this.normalizeCityQuery(query)] ?? null;
   }
 
   async getRouteReport(
@@ -105,5 +115,13 @@ export class FallbackRoutingProvider implements RoutingProvider {
 
   private toRadians(value: number): number {
     return (value * Math.PI) / 180;
+  }
+
+  private normalizeCityQuery(query: string): string {
+    return String(query ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\s*,\s*/g, ", ")
+      .toLowerCase();
   }
 }

@@ -9,6 +9,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { UserRoleEnum } from "src/user/enums/user-roles.enum";
 import { CreateLoadFromRoomDTO } from "./dto/create-load-from-room.dto";
+import { DecideLoadAccessDTO, RequestLoadAccessDTO } from "./dto/load-access.dto";
 import { UpdateLoadDTO } from "./dto/update-load.dto";
 import { PrometheusLoad } from "./interface/load.interface";
 
@@ -163,6 +164,90 @@ export class LoadsService {
     return load.toObject() as PrometheusLoad;
   }
 
+  async requestAccess(loadId: string, companyId: string, user: any, data: RequestLoadAccessDTO): Promise<PrometheusLoad> {
+    const load = await this.loadModel.findOne({ _id: loadId, companyId: String(companyId) });
+    if (!load) throw new NotFoundException("Load was not found.");
+
+    const requesterId = String(user._id ?? "");
+    if (this.loadOwnerId(load) === requesterId) {
+      throw new ConflictException("This load is already assigned to you.");
+    }
+
+    const existingPending = (load.accessRequests ?? []).find((request) => (
+      request.status === "pending"
+      && String(request.requestedById) === requesterId
+    ));
+    if (existingPending) {
+      return load.toObject() as PrometheusLoad;
+    }
+
+    const now = new Date();
+    const requesterName = this.contactName(user) || this.cleanString(user.email) || "Prometheus user";
+    const nextRequest = {
+      id: `load-access-${now.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
+      requestedById: requesterId,
+      requestedByName: requesterName,
+      requestedByEmail: this.cleanString(user.email),
+      requestedAt: now,
+      targetDispatcherId: this.cleanString(load.dispatch?.assignedDispatcherId),
+      targetDispatcherName: this.cleanString(load.dispatch?.assignedDispatcherName) || "Assigned dispatcher",
+      status: "pending" as const,
+      note: this.cleanString(data?.note),
+    };
+
+    load.accessRequests = [...(load.accessRequests ?? []), nextRequest];
+    await load.save();
+    return load.toObject() as PrometheusLoad;
+  }
+
+  async decideAccessRequest(
+    loadId: string,
+    requestId: string,
+    companyId: string,
+    user: any,
+    data: DecideLoadAccessDTO
+  ): Promise<PrometheusLoad> {
+    const load = await this.loadModel.findOne({ _id: loadId, companyId: String(companyId) });
+    if (!load) throw new NotFoundException("Load was not found.");
+
+    const accessRequests = load.accessRequests ?? [];
+    const requestIndex = accessRequests.findIndex((request) => request.id === requestId);
+    if (requestIndex < 0) throw new NotFoundException("Access request was not found.");
+
+    const request = accessRequests[requestIndex];
+    if (request.status !== "pending") {
+      throw new ConflictException("This access request has already been decided.");
+    }
+
+    if (!this.canApproveAccess(load, user)) {
+      throw new ForbiddenException("Only the assigned dispatcher or a manager can approve load access.");
+    }
+
+    const now = new Date();
+    const decidedByName = this.contactName(user) || this.cleanString(user.email) || "Prometheus user";
+    const nextStatus = data.action === "approve" ? "approved" : "rejected";
+    accessRequests[requestIndex] = {
+      ...request,
+      status: nextStatus,
+      decidedById: String(user._id ?? ""),
+      decidedByName,
+      decidedAt: now,
+      decisionNote: this.cleanString(data.note),
+    };
+
+    if (data.action === "approve") {
+      load.dispatch = {
+        assignedDispatcherId: this.cleanString(request.requestedById),
+        assignedDispatcherName: this.cleanString(request.requestedByName) || "Assigned dispatcher",
+        assignedDispatcherEmail: this.cleanString(request.requestedByEmail),
+      };
+    }
+
+    load.accessRequests = accessRequests;
+    await load.save();
+    return load.toObject() as PrometheusLoad;
+  }
+
   async deleteLoad(loadId: string, companyId: string, user: any): Promise<{ deleted: boolean; loadId: string }> {
     const load = await this.loadModel.findOne({ _id: loadId, companyId: String(companyId) });
     if (!load) throw new NotFoundException("Load was not found.");
@@ -179,7 +264,15 @@ export class LoadsService {
     if ([UserRoleEnum.Admin, UserRoleEnum.Manager, UserRoleEnum.Supervisor].includes(role as UserRoleEnum)) {
       return true;
     }
-    return String(load.dispatch?.assignedDispatcherId ?? load.createdBy ?? "") === String(user._id ?? "");
+    return this.loadOwnerId(load) === String(user._id ?? "");
+  }
+
+  private canApproveAccess(load: PrometheusLoad, user: any): boolean {
+    return this.canEdit(load, user);
+  }
+
+  private loadOwnerId(load: PrometheusLoad): string {
+    return this.cleanString(load.dispatch?.assignedDispatcherId) || this.cleanString(load.createdBy);
   }
 
   private findExistingRoomLoad(companyId: string, data: CreateLoadFromRoomDTO): Promise<any> {

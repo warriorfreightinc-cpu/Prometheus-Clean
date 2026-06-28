@@ -68,13 +68,23 @@
 
     <div class="chat-input">
       <input
+        #importFileInput
+        class="visually-hidden"
+        type="file"
+        accept=".txt,.csv,.tsv,.eml,.xls,.xlsx,.pdf,image/*,text/*"
+        (change)="handleImportFileSelection($event)"
+      />
+      <button class="import-button" type="button" [disabled]="chatbbLoading" (click)="openImportPicker()">
+        Import
+      </button>
+      <textarea
         [ngModel]="chatbbPrompt"
         (ngModelChange)="updatePrompt($event)"
-        type="text"
-        placeholder="Post, search, ask for rates, route context, setup, tracking, or booking help."
+        rows="1"
+        placeholder="Post, paste a list, search, ask for rates, route context, setup, tracking, or booking help."
         [disabled]="chatbbLoading"
-        (keyup.enter)="submit()"
-      />
+        (keydown)="handleComposerKeydown($event)"
+      ></textarea>
       <button class="primary-button" type="button" [disabled]="chatbbLoading" (click)="submit()">
         Send
       </button>

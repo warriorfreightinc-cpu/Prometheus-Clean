@@ -3,7 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   CreatePrometheusLoadFromRoomPayload,
+  DecideLoadAccessPayload,
   PrometheusLoad,
+  RequestLoadAccessPayload,
   UpdatePrometheusLoadPayload,
 } from '../../shared/types/models';
 
@@ -25,6 +27,14 @@ export class LoadsApiService {
 
   updateLoad(loadId: string, payload: UpdatePrometheusLoadPayload): Observable<PrometheusLoad> {
     return this.http.patch<PrometheusLoad>(`loads/${loadId}`, payload);
+  }
+
+  requestLoadAccess(loadId: string, payload: RequestLoadAccessPayload): Observable<PrometheusLoad> {
+    return this.http.post<PrometheusLoad>(`loads/${loadId}/access-requests`, payload);
+  }
+
+  decideLoadAccess(loadId: string, requestId: string, payload: DecideLoadAccessPayload): Observable<PrometheusLoad> {
+    return this.http.patch<PrometheusLoad>(`loads/${loadId}/access-requests/${requestId}`, payload);
   }
 
   deleteLoad(loadId: string): Observable<{ deleted: boolean; loadId: string }> {

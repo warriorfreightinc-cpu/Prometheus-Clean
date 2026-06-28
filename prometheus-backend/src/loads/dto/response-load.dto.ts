@@ -37,6 +37,21 @@ export class ResponseLoadDTO {
     assignedDispatcherName: string;
     assignedDispatcherEmail: string;
   };
+  readonly accessRequests?: Array<{
+    id: string;
+    requestedById: string;
+    requestedByName: string;
+    requestedByEmail: string;
+    requestedAt: Date;
+    targetDispatcherId: string;
+    targetDispatcherName: string;
+    status: "pending" | "approved" | "rejected";
+    note?: string;
+    decidedById?: string;
+    decidedByName?: string;
+    decidedAt?: Date;
+    decisionNote?: string;
+  }>;
   readonly equipmentLabel?: string;
   readonly rate?: number | null;
   readonly weight?: number | null;

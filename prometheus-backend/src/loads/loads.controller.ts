@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/
 import { ApiConsumes, ApiOkResponse } from "@nestjs/swagger";
 import { Roles } from "src/shared/decorators/roles.decorator";
 import { CreateLoadFromRoomDTO } from "./dto/create-load-from-room.dto";
+import { DecideLoadAccessDTO, RequestLoadAccessDTO } from "./dto/load-access.dto";
 import { ResponseLoadDTO } from "./dto/response-load.dto";
 import { UpdateLoadDTO } from "./dto/update-load.dto";
 import { LoadsService } from "./loads.service";
@@ -38,6 +39,25 @@ export class LoadsController {
   @ApiConsumes("multipart/form-data")
   updateLoad(@Param("id") id: string, @Body() data: UpdateLoadDTO, @Req() req) {
     return this.service.updateLoad(id, req.user.companyId, req.user, data);
+  }
+
+  @Roles("broker", "carrier", "admin", "manager", "supervisor")
+  @Post(":id/access-requests")
+  @ApiOkResponse({ status: 200, type: ResponseLoadDTO })
+  requestAccess(@Param("id") id: string, @Body() data: RequestLoadAccessDTO, @Req() req) {
+    return this.service.requestAccess(id, req.user.companyId, req.user, data);
+  }
+
+  @Roles("broker", "carrier", "admin", "manager", "supervisor")
+  @Patch(":id/access-requests/:requestId")
+  @ApiOkResponse({ status: 200, type: ResponseLoadDTO })
+  decideAccessRequest(
+    @Param("id") id: string,
+    @Param("requestId") requestId: string,
+    @Body() data: DecideLoadAccessDTO,
+    @Req() req
+  ) {
+    return this.service.decideAccessRequest(id, requestId, req.user.companyId, req.user, data);
   }
 
   @Roles("broker", "carrier", "admin", "manager", "supervisor")

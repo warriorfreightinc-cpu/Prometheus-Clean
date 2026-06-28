@@ -12,7 +12,7 @@ import { PostsApiService } from '../../core/api/posts-api.service';
 import { AuthSessionService } from '../../core/auth/auth-session.service';
 import { PrometheusSocketEvent, PrometheusSocketService } from '../../core/realtime/prometheus-socket.service';
 import { formatChatTimeLabel } from '../../shared/time/chat-time-label';
-import { DispatchIntakeService, ParsedDispatchDraft } from './dispatch-intake.service';
+import { DispatchImportRejectedRow, DispatchIntakeService, ParsedDispatchDraft } from './dispatch-intake.service';
 import {
   AssistantRoomResponse,
   AuthUser,
@@ -28,6 +28,7 @@ import {
   DirectRoomResponse,
   ExecuteRoomIntegrationPayload,
   InboxDot,
+  LoadAccessRequest,
   ManualPlacePayload,
   MatchCandidate,
   MatchingAssistantEvent,
@@ -58,6 +59,13 @@ type DispatchSource = 'manual' | 'excel' | 'document' | 'tms';
 type WorkspaceTabConfig = { id: WorkspaceTab; title: string; detail: string };
 type ConsoleBubble = { id: string; sender: 'assistant' | 'user' | 'system'; text: string; label?: string; createdAt?: string | null };
 type SavedDispatchTemplate = { id: string; label: string; prompt: string; role: 'broker' | 'carrier'; createdAt: string };
+type PendingDispatchImport = {
+  sourceLabel: string;
+  role: 'broker' | 'carrier';
+  drafts: ParsedDispatchDraft[];
+  rejected: DispatchImportRejectedRow[];
+  createdAt: string;
+};
 type DirectConsoleTab = { id: DirectConsoleView; label: string; detail: string };
 type BrokerInviteStatus = 'saved' | 'pending';
 type DriverRosterItem = {
@@ -172,6 +180,19 @@ type BookingConfirmationWindow = {
 };
 type RouteIntelligenceSource = 'matching' | 'booking';
 type RouteTrackingStatus = 'notConnected' | 'connected' | 'live';
+type RoutePreviewMode = 'offline';
+type RoutePreviewPointKind = 'truck' | 'pickup' | 'stop' | 'delivery';
+type RoutePreviewSegmentKind = 'deadhead' | 'loaded';
+type RoutePreviewPoint = {
+  kind: RoutePreviewPointKind;
+  label: string;
+  x: number;
+  y: number;
+};
+type RoutePreviewSegment = {
+  kind: RoutePreviewSegmentKind;
+  points: string;
+};
 type RouteIntelligencePanelState = {
   open: boolean;
   source: RouteIntelligenceSource;
@@ -191,6 +212,9 @@ type RouteIntelligencePanelState = {
   trackingProvider: string | null;
   trackingStatus: RouteTrackingStatus;
   hazmatNotes: string[];
+  previewMode: RoutePreviewMode;
+  previewPoints: RoutePreviewPoint[];
+  previewSegments: RoutePreviewSegment[];
 };
 type LoadBoardItem = {
   loadId: string;
@@ -211,6 +235,9 @@ type LoadBoardItem = {
   statusLabel: string;
   statusTone: 'active' | 'warning' | 'billing' | 'muted';
   isMine: boolean;
+  pendingAccessRequests: LoadAccessRequest[];
+  myPendingAccessRequest: LoadAccessRequest | null;
+  canApproveAccess: boolean;
   load: PrometheusLoad;
 };
 
@@ -298,6 +325,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   dispatchSource: DispatchSource = 'manual';
   dispatchSourceMessage = 'Natural-language intake is active. Type the truck or load details and Prometheus will structure the post.';
   dispatchPreview: ParsedDispatchDraft | null = null;
+  pendingDispatchImport: PendingDispatchImport | null = null;
   dispatchConsoleMessages: ConsoleBubble[] = [];
   readonly showDispatchAssistText = false;
   directMessage = '';
@@ -1095,7 +1123,75 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
+    if (this.shouldStagePromptAsImport(prompt)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.chatbbPrompt = '';
+      this.importMatchingConsoleText(prompt, 'pasted list');
+      return;
+    }
+
     this.sendBrainMatchingPrompt(prompt);
+  }
+
+  handleMatchingImportFile(file: File): void {
+    if (!file) return;
+
+    const fileName = file.name || 'uploaded file';
+    this.appendMatchingBubble('user', `Import ${fileName}`, 'You');
+
+    if (!this.isReadableTextImportFile(file)) {
+      this.appendMatchingBubble('assistant', this.unsupportedImportFileMessage(file), 'Prometheus');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      this.importMatchingConsoleText(String(reader.result ?? ''), fileName);
+    };
+    reader.onerror = () => {
+      this.appendMatchingBubble(
+        'assistant',
+        `I could not read ${fileName}. Try saving it as CSV or plain text, then import it again.`,
+        'Prometheus'
+      );
+    };
+    reader.readAsText(file);
+  }
+
+  importMatchingConsoleText(rawText: string, sourceLabel = 'pasted list'): void {
+    const text = String(rawText ?? '').trim();
+    if (!text) {
+      this.pendingDispatchImport = null;
+      this.appendMatchingBubble('assistant', 'I did not find any text in that import. Paste the rows or upload a CSV/text file and I will stage the drafts here.', 'Prometheus');
+      return;
+    }
+
+    if (!this.user) {
+      this.appendMatchingBubble('assistant', 'Sign in first and I can turn that list into draft posts for your desk.', 'Prometheus');
+      return;
+    }
+
+    if (typeof this.dispatchIntake.parseBatch !== 'function') {
+      this.appendMatchingBubble('assistant', 'The import parser is not available in this session yet. Paste one load or truck at a time and I can still help.', 'Prometheus');
+      return;
+    }
+
+    const role = this.isBroker ? 'broker' : 'carrier';
+    const result = this.dispatchIntake.parseBatch(role, text);
+    if (!result.drafts.length) {
+      this.pendingDispatchImport = null;
+      this.appendMatchingBubble('assistant', this.buildEmptyImportMessage(sourceLabel, result.rejected), 'Prometheus');
+      return;
+    }
+
+    this.pendingDispatchImport = {
+      sourceLabel,
+      role,
+      drafts: result.drafts,
+      rejected: result.rejected,
+      createdAt: new Date().toISOString(),
+    };
+    this.appendMatchingBubble('assistant', this.buildImportReviewMessage(this.pendingDispatchImport), 'Prometheus');
   }
 
   private isTransportationCenterPostPrompt(prompt: string): boolean {
@@ -1112,6 +1208,75 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.isBroker
       ? /\b(load|loads|shipment|shipments|hazmat)\b/.test(normalized)
       : /\b(truck|trucks|driver|drivers|unit|ready|empty|available)\b/.test(normalized);
+  }
+
+  private shouldStagePromptAsImport(prompt: string): boolean {
+    const normalized = prompt.toLowerCase();
+    if (normalized.includes('\n')) return true;
+    return /^(import|paste|uploaded|from email|from csv)\b/.test(normalized);
+  }
+
+  private isReadableTextImportFile(file: File): boolean {
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return type.startsWith('text/')
+      || name.endsWith('.csv')
+      || name.endsWith('.tsv')
+      || name.endsWith('.txt')
+      || name.endsWith('.eml');
+  }
+
+  private unsupportedImportFileMessage(file: File): string {
+    const name = (file.name || '').toLowerCase();
+    if (file.type?.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|bmp)$/i.test(name)) {
+      return [
+        'I can receive the picture now, but OCR is not connected in this test slice yet.',
+        'For this round, paste the load rows as text or upload CSV/text and I will stage drafts before anything goes live.',
+        'The next provider/import slice can add picture OCR so screenshots become draft posts too.',
+      ].join('\n');
+    }
+
+    if (/\.(xls|xlsx)$/i.test(name)) {
+      return [
+        'I can see the spreadsheet upload, but XLS/XLSX parsing is not connected yet.',
+        'Export it as CSV for this test and I will read the rows into draft posts for approval.',
+      ].join('\n');
+    }
+
+    if (/\.pdf$/i.test(name)) {
+      return 'PDF intake is staged, but text extraction is not connected yet. Paste the email/list text or upload CSV/text and I will prepare the drafts.';
+    }
+
+    return 'I can import CSV, text, TSV, or email text right now. Save this file as CSV/text or paste the rows here and I will prepare draft posts.';
+  }
+
+  private buildImportReviewMessage(pending: PendingDispatchImport): string {
+    const noun = pending.role === 'broker' ? 'load' : 'truck';
+    const plural = `${noun}${pending.drafts.length === 1 ? '' : 's'}`;
+    const rows = pending.drafts
+      .slice(0, 6)
+      .map((draft, index) => `${index + 1}. ${draft.summary}`)
+      .join('\n');
+    const rejectedLine = pending.rejected.length
+      ? `\n${pending.rejected.length} row${pending.rejected.length === 1 ? '' : 's'} needs a little help. I will leave those out until you correct them.`
+      : '';
+
+    return [
+      `I read ${pending.drafts.length} draft ${plural} from ${pending.sourceLabel}.`,
+      rows,
+      `${rejectedLine}`,
+      'Nothing is live yet. Type "approve import" and I will post the clean drafts, or type "cancel import" and I will clear them.',
+    ].filter(Boolean).join('\n');
+  }
+
+  private buildEmptyImportMessage(sourceLabel: string, rejected: DispatchImportRejectedRow[]): string {
+    const examples = this.isBroker
+      ? 'Example: Chicago, IL to Jacksonville, FL V53 42000 lbs $2500'
+      : 'Example: truck Chicago, IL to Jacksonville, FL V53 42000 lbs';
+    const rejectedPreview = rejected.length
+      ? `\nI found ${rejected.length} row${rejected.length === 1 ? '' : 's'}, but they were missing city/state lane details.`
+      : '';
+    return `I looked at ${sourceLabel}, but I could not turn it into draft ${this.dispatchRoleLabel} yet.${rejectedPreview}\n${examples}`;
   }
 
   private submitTransportationCenterPost(note: string): void {
@@ -1918,6 +2083,16 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.appendBookingAssistantMessage('assistant', `The ${workflow.trackingProvider} connection is ready. Do you want to allow tracking for this truck? Reply yes or no.`);
   }
 
+  openSelectedBookingRouteMap(): void {
+    if (!this.selectedRoom) return;
+    this.directSetupPickerOpen = false;
+    this.directDriverPickerOpen = false;
+    this.directTrackingConfirmOpen = false;
+    this.directCancelConfirmOpen = false;
+    this.bookingAssistantAction = null;
+    this.openBookingRouteIntelligencePanel();
+  }
+
   beginCancellationAssist(): void {
     if (!this.selectedRoom) return;
     if (!this.selectedRoomLoad) {
@@ -2305,6 +2480,10 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     const message = this.directMessage.trim();
     const room = this.selectedBrokerRoom;
     if (!message || !room || !this.user) return;
+    if (this.isPreviewRoom(room.id)) {
+      this.appendLocalDirectMessage(room, message);
+      return;
+    }
     this.messagesApi.createMessage({ ...this.getPostPair(room), text: message, type: 'message', role: this.user.role }).subscribe({
       next: () => {
         const nextMessage: DirectMessage = { text: message, type: 'message', role: this.user?.role ?? '', date: new Date().toISOString() };
@@ -2313,6 +2492,18 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       error: () => { this.workspaceError = 'The direct message could not be sent.'; },
     });
+  }
+
+  private appendLocalDirectMessage(room: DirectRoom, message: string): void {
+    const nextMessage: DirectMessage = {
+      text: message,
+      type: 'message',
+      role: this.user?.role ?? '',
+      date: new Date().toISOString(),
+    };
+    this.updateRoomMessages(room.id, [...room.messages, nextMessage]);
+    this.directMessage = '';
+    this.workspaceError = '';
   }
 
   handleDirectComposerKeydown(event: Event): void {
@@ -2527,10 +2718,35 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   requestTeamLoadAccess(item: LoadBoardItem): void {
-    this.accessRequestLoad = item;
-    this.accessVerificationCode = '';
+    if (!item.loadId || this.loadActionPendingId) return;
+
     this.loadError = '';
-    this.loadMessage = `Access request prepared for ${item.dispatcherName}. Enter their verification code to take over ${item.reference}.`;
+    this.loadMessage = '';
+    this.accessRequestLoad = null;
+    this.accessVerificationCode = '';
+
+    if (item.isMine) {
+      this.loadMessage = `${item.reference} is already assigned to your desk.`;
+      return;
+    }
+
+    if (item.myPendingAccessRequest) {
+      this.loadMessage = `Access request is already waiting for ${item.dispatcherName} on ${item.reference}.`;
+      return;
+    }
+
+    this.loadActionPendingId = item.loadId;
+    this.loadsApi.requestLoadAccess(item.loadId, {
+      note: 'Requesting access from Loads Console.',
+    }).pipe(finalize(() => (this.loadActionPendingId = ''))).subscribe({
+      next: (load) => {
+        this.replaceLoad(load);
+        this.loadMessage = `Access request sent to ${this.loadDispatcherName(load)} for ${this.buildLoadReference(load)}.`;
+      },
+      error: (error) => {
+        this.loadError = this.backendErrorMessage(error) || 'Prometheus could not request access to that load.';
+      },
+    });
   }
 
   cancelTeamLoadAccess(): void {
@@ -2539,15 +2755,28 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   verifyTeamLoadAccess(): void {
-    if (!this.accessRequestLoad) return;
-    if (this.accessVerificationCode.trim().length < 4) {
-      this.loadError = 'Enter the verification code from the dispatcher before taking access.';
-      return;
-    }
-
-    this.loadMessage = `Access verified for ${this.accessRequestLoad.reference}. Backend takeover approval is the next permission API.`;
+    this.loadError = '';
+    this.loadMessage = 'Load access now uses owner or manager approval from the Loads Console.';
     this.accessRequestLoad = null;
     this.accessVerificationCode = '';
+  }
+
+  decideTeamLoadAccess(item: LoadBoardItem, request: LoadAccessRequest, action: 'approve' | 'reject'): void {
+    if (!item.loadId || !request?.id || this.loadActionPendingId) return;
+
+    this.loadError = '';
+    this.loadMessage = '';
+    this.loadActionPendingId = item.loadId;
+    this.loadsApi.decideLoadAccess(item.loadId, request.id, { action }).pipe(finalize(() => (this.loadActionPendingId = ''))).subscribe({
+      next: (load) => {
+        this.replaceLoad(load);
+        const decisionLabel = action === 'approve' ? 'approved' : 'rejected';
+        this.loadMessage = `Access ${decisionLabel} for ${request.requestedByName || 'coworker'} on ${this.buildLoadReference(load)}.`;
+      },
+      error: (error) => {
+        this.loadError = this.backendErrorMessage(error) || 'Prometheus could not update that access request.';
+      },
+    });
   }
 
   stageTmsExport(item: LoadBoardItem): void {
@@ -2634,6 +2863,30 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   private handleMatchingConsoleCommand(prompt: string): boolean {
     const normalized = prompt.toLowerCase();
 
+    if (this.isCasualGreetingCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.answerCasualGreeting(normalized);
+      return true;
+    }
+
+    if (this.isApproveImportCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.approvePendingDispatchImport();
+      return true;
+    }
+
+    if (this.isCancelImportCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.cancelPendingDispatchImport();
+      return true;
+    }
+
+    if (this.isReviewImportCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.reviewPendingDispatchImport();
+      return true;
+    }
+
     if (this.isBrainBookingApprovalCommand(normalized)) {
       return false;
     }
@@ -2652,6 +2905,12 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isRouteIntelligenceCommand(normalized)) {
       this.appendMatchingBubble('user', prompt, 'You');
       this.openMatchingRouteIntelligencePanel(this.parseRouteMatchIndex(normalized));
+      return true;
+    }
+
+    if (this.isMatchInformationCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.describeMatchInformation(prompt);
       return true;
     }
 
@@ -2709,13 +2968,131 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       this.appendMatchingBubble('user', prompt, 'You');
       this.appendMatchingBubble(
         'assistant',
-        `Available commands:\n- Show my posted ${this.dispatchRoleLabel}\n- Show matches for this posting\n- Book match 1\n- Save this as template\n- Show my templates\n- Use my latest template\n- Repost selected post\n- Delete selected post\n- Open booking chat`,
+        `Here is what I can help with from this center:\n- Show my posted ${this.dispatchRoleLabel}\n- Show matches for this posting\n- Book match 1\n- Import or paste a load/truck list\n- Save this as template\n- Show my templates\n- Use my latest template\n- Repost selected post\n- Delete selected post\n- Open booking chat`,
         'Prometheus'
       );
       return true;
     }
 
     return false;
+  }
+
+  private isCasualGreetingCommand(prompt: string): boolean {
+    const normalized = prompt.replace(/[!?.,]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.split(' ').length > 5) return false;
+    if (/\b(load|loads|truck|trucks|route|match|matches|book|post|rate|rates|setup|tracking|hazmat|lane)\b/.test(normalized)) {
+      return false;
+    }
+    return /^(good\s+(morning|mornin|afternoon|evening)|hello|hi|hey)(\s+(prometheus|there|team))?$/.test(normalized);
+  }
+
+  private isApproveImportCommand(prompt: string): boolean {
+    return /\b(approve|post|send|create)\b/.test(prompt) && /\bimport\b/.test(prompt);
+  }
+
+  private isCancelImportCommand(prompt: string): boolean {
+    return /\b(cancel|clear|discard|delete)\b/.test(prompt) && /\bimport\b/.test(prompt);
+  }
+
+  private isReviewImportCommand(prompt: string): boolean {
+    return /\b(show|review|list)\b/.test(prompt) && /\bimport\b/.test(prompt);
+  }
+
+  private reviewPendingDispatchImport(): void {
+    if (!this.pendingDispatchImport) {
+      this.appendMatchingBubble('assistant', 'There is no import waiting for review right now. Upload CSV/text or paste a list and I will stage it here first.', 'Prometheus');
+      return;
+    }
+
+    this.appendMatchingBubble('assistant', this.buildImportReviewMessage(this.pendingDispatchImport), 'Prometheus');
+  }
+
+  private cancelPendingDispatchImport(): void {
+    if (!this.pendingDispatchImport) {
+      this.appendMatchingBubble('assistant', 'There is no pending import to clear.', 'Prometheus');
+      return;
+    }
+
+    this.pendingDispatchImport = null;
+    this.appendMatchingBubble('assistant', 'No problem. I cleared the staged import and did not post anything.', 'Prometheus');
+  }
+
+  private approvePendingDispatchImport(): void {
+    const pending = this.pendingDispatchImport;
+    if (!pending?.drafts.length) {
+      this.appendMatchingBubble('assistant', 'There is no import ready to approve yet. Paste rows or upload CSV/text and I will prepare drafts first.', 'Prometheus');
+      return;
+    }
+
+    if (!this.user || this.dispatchSubmitting) return;
+
+    this.chatbbLoading = true;
+    this.dispatchSubmitting = true;
+    this.chatbbError = '';
+
+    const draftRequests = pending.drafts.map((draft) =>
+      forkJoin({
+        origin: this.resolveDispatchPlace(draft.origin),
+        destination: draft.destination ? this.resolveDispatchPlace(draft.destination) : of(null),
+      }).pipe(
+        switchMap(({ origin, destination }) => forkJoin(this.buildNarrativeDispatchRequests(draft, origin, destination)))
+      )
+    );
+
+    forkJoin(draftRequests)
+      .pipe(finalize(() => {
+        this.chatbbLoading = false;
+        this.dispatchSubmitting = false;
+      }))
+      .subscribe({
+        next: (createdGroups) => {
+          const createdPosts = createdGroups.flat();
+          const noun = this.isBroker ? 'load' : 'truck';
+          const createdLines = createdPosts
+            .slice(0, 6)
+            .map((post, index) => `${index + 1}. ${this.formatLane(post)} | ${this.formatEquipment(post)} | ${this.formatMetric(post)}`)
+            .join('\n');
+          this.pendingDispatchImport = null;
+          this.selectedPostId = createdPosts[0]?._id ?? this.selectedPostId;
+          this.appendMatchingBubble(
+            'assistant',
+            [
+              `I posted ${createdPosts.length} ${noun}${createdPosts.length === 1 ? '' : 's'} from the approved import.`,
+              createdLines,
+              `I am checking for matching hazmat ${this.isBroker ? 'trucks' : 'loads'} now and will keep this center updated as options line up.`,
+            ].filter(Boolean).join('\n'),
+            'Prometheus'
+          );
+          this.refreshWorkspace();
+        },
+        error: (error) => {
+          const backendMessage = Array.isArray(error?.error?.message) ? error.error.message.join(', ') : error?.error?.message;
+          this.chatbbError = backendMessage || 'I could not post the approved import yet. Check the draft rows and try again.';
+          this.appendMatchingBubble('assistant', this.chatbbError, 'Prometheus');
+        },
+      });
+  }
+
+  private answerCasualGreeting(prompt: string): void {
+    const greeting = prompt.includes('afternoon')
+      ? 'Good afternoon'
+      : prompt.includes('evening')
+        ? 'Good evening'
+        : prompt.includes('morning') || prompt.includes('mornin')
+          ? 'Good morning'
+          : 'Hello';
+    const name = this.user?.firstName?.trim();
+    const roleHint = this.isBroker
+      ? 'We can post a load, find trucks, check rates/routes, stage setup, or start tracking.'
+      : this.user?.role === 'carrier'
+        ? 'We can post a truck, find loads, check rates/routes, stage setup, or start tracking.'
+        : 'We can post, match, check rates/routes, stage setup, or start tracking.';
+
+    this.appendMatchingBubble(
+      'assistant',
+      `${greeting}${name ? `, ${name}` : ''}. I am here with you. ${roleHint} You can also paste a list or import CSV/text, and I will turn it into drafts before anything goes live.`,
+      'Prometheus'
+    );
   }
 
   private sendBrainMatchingPrompt(prompt: string): void {
@@ -2731,7 +3108,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       related: sourcePostId ? { sourcePostId } : undefined,
     }).pipe(
       catchError(() => {
-        this.appendMatchingBubble('assistant', 'Prometheus could not answer right now. Try again.', 'Prometheus');
+        this.appendMatchingBubble('assistant', 'I lost the Brain connection for a moment. Try that again and I will pick it back up here.', 'Prometheus');
         return of(null);
       }),
       finalize(() => {
@@ -2759,7 +3136,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
         this.appendMatchingBubble('assistant', message, 'Prometheus');
       },
       error: () => {
-        this.appendMatchingBubble('assistant', 'Prometheus could not approve that request right now.', 'Prometheus');
+        this.appendMatchingBubble('assistant', 'I could not approve that request yet. Please try again in a moment.', 'Prometheus');
       },
     });
   }
@@ -2776,7 +3153,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
         this.appendMatchingBubble('assistant', 'Rejected. I will not take that action.', 'Prometheus');
       },
       error: () => {
-        this.appendMatchingBubble('assistant', 'Prometheus could not reject that request right now.', 'Prometheus');
+        this.appendMatchingBubble('assistant', 'I could not reject that request yet. Please try again in a moment.', 'Prometheus');
       },
     });
   }
@@ -2846,6 +3223,99 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     return Number.isInteger(index) && index > 0 ? index - 1 : null;
   }
 
+  private isMatchInformationCommand(prompt: string): boolean {
+    return /\b(show|open|display|check)\b.*\b(info|information|details|detail)\b/.test(prompt)
+      || /\b(info|information|details|detail)\b.*\b(match|option|lane|truck|load)\b/.test(prompt);
+  }
+
+  private describeMatchInformation(prompt: string): void {
+    if (!this.matchCandidates.length) {
+      this.appendMatchingBubble('assistant', 'No match options are loaded yet. Type "show matches" after selecting a live posting.', 'Prometheus');
+      return;
+    }
+
+    const index = this.matchInformationIndex(prompt);
+    if (index < 0 || !this.matchCandidates[index]) {
+      this.appendMatchingBubble(
+        'assistant',
+        'I could not identify that option from the lane text. Type "show matches" and then ask by number, like "show information on match 4".',
+        'Prometheus'
+      );
+      return;
+    }
+
+    const candidate = this.matchCandidates[index];
+    const miles = this.asNumberOrNull(candidate.routeMetrics?.totalPracticalMiles)
+      ?? this.asNumberOrNull(candidate.routeMetrics?.tripMiles);
+    const milesLine = miles === null ? '' : `\nEstimated miles: ${miles.toLocaleString('en-US')}.`;
+    this.appendMatchingBubble(
+      'assistant',
+      `Here is the matching option I found:\n${this.describeMatchCandidate(candidate, index)}${milesLine}\nType "book match ${index + 1}" when you want Prometheus to start the booking conversation.`,
+      'Prometheus'
+    );
+  }
+
+  private matchInformationIndex(prompt: string): number {
+    const explicit = prompt.match(/\b(?:match|option)\s*(\d+)\b/i);
+    if (explicit) {
+      const index = Number(explicit[1]) - 1;
+      return Number.isInteger(index) ? index : -1;
+    }
+
+    const tokens = this.matchInformationTokens(prompt);
+    if (!tokens.length || !tokens.some((token) => token.length > 2)) return -1;
+
+    const scored = this.matchCandidates.map((candidate, index) => {
+      const searchable = this.normalizeSearchText([
+        candidate.summary?.reference,
+        candidate.summary?.lane?.origin,
+        candidate.summary?.lane?.destination,
+        ...(candidate.summary?.equipment ?? []),
+      ].join(' '));
+      const score = tokens.filter((token) => searchable.includes(token)).length;
+      return { index, score };
+    }).sort((left, right) => right.score - left.score);
+
+    const best = scored[0];
+    return best && best.score > 0 ? best.index : -1;
+  }
+
+  private matchInformationTokens(prompt: string): string[] {
+    const stopWords = new Set([
+      'show',
+      'open',
+      'display',
+      'check',
+      'information',
+      'info',
+      'details',
+      'detail',
+      'about',
+      'for',
+      'on',
+      'the',
+      'this',
+      'please',
+      'match',
+      'option',
+      'lane',
+      'load',
+      'loads',
+      'truck',
+      'trucks',
+      'route',
+      'from',
+      'to',
+    ]);
+    return this.normalizeSearchText(prompt)
+      .split(' ')
+      .filter((token) => !!token && !stopWords.has(token));
+  }
+
+  private normalizeSearchText(value: string): string {
+    return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
   private openMatchingRouteIntelligencePanel(matchIndex: number | null = null): void {
     const post = this.selectedPost;
     const candidate = matchIndex !== null ? this.matchCandidates[matchIndex] : this.matchCandidates[0] ?? null;
@@ -2875,6 +3345,8 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     const candidateRate = this.asNumberOrNull(candidate?.summary?.rate);
     const postedRate = routeUsesCandidateLane ? candidateRate : sourceRate;
     const suggestedRate = candidateRate ?? postedRate;
+    const truckLocationLabel = this.matchingTruckLocationLabel(post, candidate);
+    const preview = this.buildOfflineRoutePreview(truckLocationLabel, originLabel, destinationLabel, routeUsesCandidateLane ? [] : this.formatRouteStops(post?.stops));
 
     this.routeIntelligencePanel = {
       ...this.emptyRouteIntelligencePanel(),
@@ -2883,7 +3355,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       laneLabel: `${originLabel} -> ${destinationLabel}`,
       originLabel,
       destinationLabel,
-      truckLocationLabel: this.matchingTruckLocationLabel(post, candidate),
+      truckLocationLabel,
       deadheadMiles,
       loadedMiles,
       totalMiles,
@@ -2892,6 +3364,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       routeProvider: this.routeProviderLabel(metrics?.provider),
       stops: routeUsesCandidateLane ? [] : this.formatRouteStops(post?.stops),
       hazmatNotes: this.matchingRouteHazmatNotes(candidate),
+      ...preview,
     };
     this.appendMatchingBubble('assistant', `Route intelligence is open for ${this.routeIntelligencePanel.laneLabel}.`, 'Prometheus');
   }
@@ -2905,6 +3378,9 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     const destinationLabel = this.stringValue(load?.lane?.destination) || this.formatLocation(room.post?.destination);
     const loadedMiles = this.asNumberOrNull(room.post?.distance);
     const rate = this.asNumberOrNull(load?.rate) ?? this.asNumberOrNull(room.bookingRate) ?? this.asNumberOrNull(room.maxBid);
+    const stops = this.formatRouteStops(room.post?.stops);
+    const truckLocationLabel = this.bookingTruckLocationLabel(load, workflow);
+    const preview = this.buildOfflineRoutePreview(truckLocationLabel, originLabel, destinationLabel, stops);
 
     this.routeIntelligencePanel = {
       ...this.emptyRouteIntelligencePanel(),
@@ -2913,8 +3389,8 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       laneLabel: `${originLabel} -> ${destinationLabel}`,
       originLabel,
       destinationLabel,
-      stops: this.formatRouteStops(room.post?.stops),
-      truckLocationLabel: this.bookingTruckLocationLabel(load, workflow),
+      stops,
+      truckLocationLabel,
       loadedMiles,
       totalMiles: loadedMiles,
       postedRate: rate,
@@ -2923,6 +3399,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       trackingProvider: workflow.trackingProvider,
       trackingStatus: workflow.trackingShared ? 'live' : workflow.trackingProvider ? 'connected' : 'notConnected',
       hazmatNotes: this.bookingRouteHazmatNotes(load, room),
+      ...preview,
     };
   }
 
@@ -2954,7 +3431,85 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
         'Hazmat route review is estimated until live routing provider data is connected.',
         'Dispatcher must confirm commodity restrictions, tunnel rules, and appointment windows.',
       ],
+      previewMode: 'offline',
+      previewPoints: [],
+      previewSegments: [],
     };
+  }
+
+  routePreviewAriaLabel(): string {
+    const panel = this.routeIntelligencePanel;
+    return `Offline route preview for ${panel.laneLabel || 'selected lane'}`;
+  }
+
+  routePreviewShortLabel(point: RoutePreviewPoint): string {
+    if (point.kind === 'truck') return 'TRK';
+    if (point.kind === 'pickup') return 'PU';
+    if (point.kind === 'delivery') return 'DEL';
+    return 'STP';
+  }
+
+  routePreviewPointColor(point: RoutePreviewPoint): string {
+    if (point.kind === 'truck') return '#52c9ff';
+    if (point.kind === 'pickup') return '#8ee89e';
+    if (point.kind === 'delivery') return '#ff8f70';
+    return '#f4d06f';
+  }
+
+  routePreviewSegmentColor(segment: RoutePreviewSegment): string {
+    return segment.kind === 'loaded' ? '#ffae4f' : '#52c9ff';
+  }
+
+  private buildOfflineRoutePreview(
+    truckLocationLabel: string,
+    originLabel: string,
+    destinationLabel: string,
+    stops: string[]
+  ): Pick<RouteIntelligencePanelState, 'previewMode' | 'previewPoints' | 'previewSegments'> {
+    const pickup = this.routePreviewPoint('pickup', originLabel || 'Pickup pending', 36, 43);
+    const delivery = this.routePreviewPoint('delivery', destinationLabel || 'Delivery pending', 86, 34);
+    const stopPoints = stops.map((stop, index) => {
+      const x = stops.length === 1 ? 61 : 48 + Math.round(((index + 1) * 28) / (stops.length + 1));
+      const y = index % 2 === 0 ? 28 : 48;
+      return this.routePreviewPoint('stop', stop, x, y);
+    });
+    const truck = this.previewableTruckLabel(truckLocationLabel)
+      ? this.routePreviewPoint('truck', truckLocationLabel, 15, 64)
+      : null;
+    const previewPoints = [truck, pickup, ...stopPoints, delivery].filter((point): point is RoutePreviewPoint => Boolean(point));
+    const loadedPoints = [pickup, ...stopPoints, delivery];
+    const previewSegments: RoutePreviewSegment[] = [];
+
+    if (truck) {
+      previewSegments.push({
+        kind: 'deadhead',
+        points: this.routePreviewPolyline([truck, pickup]),
+      });
+    }
+
+    previewSegments.push({
+      kind: 'loaded',
+      points: this.routePreviewPolyline(loadedPoints),
+    });
+
+    return {
+      previewMode: 'offline',
+      previewPoints,
+      previewSegments,
+    };
+  }
+
+  private routePreviewPoint(kind: RoutePreviewPointKind, label: string, x: number, y: number): RoutePreviewPoint {
+    return { kind, label, x, y };
+  }
+
+  private routePreviewPolyline(points: RoutePreviewPoint[]): string {
+    return points.map((point) => `${point.x},${point.y}`).join(' ');
+  }
+
+  private previewableTruckLabel(label: string): boolean {
+    const normalized = label.trim().toLowerCase();
+    return Boolean(normalized) && normalized !== 'truck location pending' && normalized !== 'tracking not connected';
   }
 
   private sumRouteDeadheadMiles(metrics: MatchCandidate['routeMetrics'] | null): number | null {
@@ -4961,12 +5516,14 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private updateRoomMessages(roomId: string, messages: DirectMessage[]): void {
     const normalized = this.normalizeMessages(messages);
-    this.rooms = this.sortRooms(this.rooms.map((room) => room.id === roomId ? {
+    const mergeRoom = (room: DirectRoom): DirectRoom => room.id === roomId ? {
       ...room,
       messages: normalized,
       maxBid: this.extractLatestBid(normalized),
       lastMessageAt: normalized.length ? normalized[normalized.length - 1].date ?? null : null,
-    } : room));
+    } : room;
+    this.rooms = this.sortRooms(this.rooms.map(mergeRoom));
+    this.previewDirectRooms = this.previewDirectRooms.map(mergeRoom);
   }
 
   private updateSeenCounts(roomId: string, count: number): void {
@@ -5013,6 +5570,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private buildLoadBoardItem(load: PrometheusLoad): LoadBoardItem {
     const status = this.normalizeLoadStatus(load.status);
+    const pendingAccessRequests = this.pendingLoadAccessRequests(load);
     return {
       loadId: load._id,
       ownPostId: this.loadOwnPostId(load),
@@ -5032,6 +5590,9 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       statusLabel: this.loadBoardStatusLabel(status),
       statusTone: this.loadBoardStatusTone(status),
       isMine: this.isLoadOwnedByCurrentUser(load),
+      pendingAccessRequests,
+      myPendingAccessRequest: this.myPendingLoadAccessRequest(load, pendingAccessRequests),
+      canApproveAccess: this.canApproveLoadAccess(load),
       load,
     };
   }
@@ -5126,7 +5687,36 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private isLoadOwnedByCurrentUser(load: PrometheusLoad): boolean {
     if (!this.user) return false;
-    return String(load.dispatch?.assignedDispatcherId ?? load.createdBy ?? '') === String(this.user.id);
+    const dispatcherId = this.stringValue(load.dispatch?.assignedDispatcherId);
+    const ownerId = dispatcherId || this.stringValue(load.createdBy);
+    return ownerId === String(this.user.id);
+  }
+
+  private pendingLoadAccessRequests(load: PrometheusLoad): LoadAccessRequest[] {
+    return (load.accessRequests ?? []).filter((request) => request.status === 'pending');
+  }
+
+  private myPendingLoadAccessRequest(
+    load: PrometheusLoad,
+    pendingAccessRequests = this.pendingLoadAccessRequests(load)
+  ): LoadAccessRequest | null {
+    if (!this.user) return null;
+    const userId = String(this.user.id);
+    return pendingAccessRequests.find((request) => String(request.requestedById) === userId) ?? null;
+  }
+
+  private canApproveLoadAccess(load: PrometheusLoad): boolean {
+    if (!this.user) return false;
+    const role = String(this.user.role ?? '');
+    if (role === 'admin' || role === 'manager' || role === 'supervisor') return true;
+    return this.isLoadOwnedByCurrentUser(load);
+  }
+
+  private replaceLoad(load: PrometheusLoad): void {
+    const replaced = this.loads.some((entry) => entry._id === load._id);
+    this.loads = replaced
+      ? this.loads.map((entry) => entry._id === load._id ? load : entry)
+      : [load, ...this.loads];
   }
 
   private isPostOwnedByCurrentUser(post: WorkspacePost): boolean {

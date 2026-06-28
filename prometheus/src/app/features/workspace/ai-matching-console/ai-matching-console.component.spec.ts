@@ -119,4 +119,19 @@ describe('AiMatchingConsoleComponent time labels', () => {
     expect(assistantChip?.textContent).toContain('Prometheus');
     expect(userChip?.textContent).toContain('You');
   });
+
+  it('emits selected import files from the AI Transportation Center', async () => {
+    await TestBed.configureTestingModule({
+      declarations: [AiMatchingConsoleComponent],
+      imports: [FormsModule],
+    }).compileComponents();
+    const fixture: ComponentFixture<AiMatchingConsoleComponent> = TestBed.createComponent(AiMatchingConsoleComponent);
+    const component = fixture.componentInstance;
+    const file = new File(['Chicago, IL to Memphis, TN V53'], 'loads.csv', { type: 'text/csv' });
+    spyOn(component.importFileSelected, 'emit');
+
+    component.handleImportFileSelection({ target: { files: [file], value: 'loads.csv' } } as any);
+
+    expect(component.importFileSelected.emit).toHaveBeenCalledWith(file);
+  });
 });
