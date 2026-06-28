@@ -16,6 +16,7 @@ import { DispatchImportRejectedRow, DispatchIntakeService, ParsedDispatchDraft }
 import {
   AssistantRoomResponse,
   AuthUser,
+  BrainSettingsView,
   BrokerPostUpsertPayload,
   ChatbbAction,
   CarrierPostUpsertPayload,
@@ -302,6 +303,12 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     memoryMode: ['off'],
     auditRetentionDays: [365, [Validators.required, Validators.min(1)]],
     allowProviderTools: [false],
+    aiProviderMode: ['local'],
+    aiReasoningModel: ['gpt-5.5', [Validators.required]],
+    aiEconomyModel: ['gpt-5.4-mini', [Validators.required]],
+    aiMonthlyBudgetUsd: [50, [Validators.required, Validators.min(1)]],
+    aiDailyRequestLimit: [500, [Validators.required, Validators.min(1)]],
+    aiOpenAiApiKey: [''],
   });
   @ViewChild('dispatchNarrativeInput') dispatchNarrativeInput?: ElementRef<HTMLTextAreaElement>;
   @ViewChild('dispatchThreadRef') dispatchThreadRef?: ElementRef<HTMLDivElement>;
@@ -318,6 +325,8 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   brainSettingsMessage = '';
   brainSettingsError = '';
   brainSettingsSaving = false;
+  brainSettings: BrainSettingsView | null = null;
+  brainProviderTesting = false;
   chatbbError = '';
   dispatchError = '';
   dispatchMessage = '';
@@ -424,6 +433,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       this.seedDispatchNarrative();
       this.connectAssistantSocket();
       this.loadWorkspaceData(this.user);
+      if (this.canManageCompanySetup) this.loadBrainSettings();
       return;
     }
     this.session.restoreSession().pipe(catchError(() => of(false))).subscribe(() => {
@@ -439,6 +449,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       this.seedDispatchNarrative();
       this.connectAssistantSocket();
       this.loadWorkspaceData(this.user);
+      if (this.canManageCompanySetup) this.loadBrainSettings();
     });
   }
 
@@ -977,15 +988,24 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.brainSettingsError = '';
 
     if (this.brainSettingsForm.invalid) {
-      this.brainSettingsError = 'Set audit retention to at least 1 day.';
+      this.brainSettingsError = 'Review Brain settings before saving. Numeric limits must be at least 1.';
       return;
     }
 
     const settings = this.brainSettingsForm.getRawValue();
+    const openAiApiKey = String(settings.aiOpenAiApiKey ?? '').trim();
     const payload: UpdateBrainSettingsPayload = {
       memoryMode: settings.memoryMode ?? 'off',
       auditRetentionDays: Number(settings.auditRetentionDays ?? 365),
       allowProviderTools: Boolean(settings.allowProviderTools),
+      ai: {
+        providerMode: settings.aiProviderMode ?? 'local',
+        reasoningModel: settings.aiReasoningModel ?? 'gpt-5.5',
+        economyModel: settings.aiEconomyModel ?? 'gpt-5.4-mini',
+        monthlyBudgetUsd: Number(settings.aiMonthlyBudgetUsd ?? 50),
+        dailyRequestLimit: Number(settings.aiDailyRequestLimit ?? 500),
+        ...(openAiApiKey ? { openAiApiKey } : {}),
+      },
     };
 
     this.brainSettingsSaving = true;
@@ -994,9 +1014,59 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
         this.brainSettingsSaving = false;
       })
     ).subscribe({
-      next: () => this.addSystemNotice('Brain settings saved.'),
+      next: () => {
+        this.addSystemNotice('Brain settings saved.');
+        this.brainSettingsForm.patchValue({ aiOpenAiApiKey: '' }, { emitEvent: false });
+        this.loadBrainSettings();
+      },
       error: () => {
         this.brainSettingsError = 'Brain settings could not be saved right now.';
+      },
+    });
+  }
+
+  loadBrainSettings(): void {
+    if (!this.canManageCompanySetup) return;
+
+    this.brainApi.getSettings().subscribe({
+      next: (settings) => {
+        this.brainSettings = settings;
+        this.brainSettingsForm.patchValue({
+          memoryMode: settings.memoryMode,
+          auditRetentionDays: settings.auditRetentionDays,
+          allowProviderTools: settings.allowProviderTools,
+          aiProviderMode: settings.ai.providerMode,
+          aiReasoningModel: settings.ai.reasoningModel,
+          aiEconomyModel: settings.ai.economyModel,
+          aiMonthlyBudgetUsd: settings.ai.monthlyBudgetUsd,
+          aiDailyRequestLimit: settings.ai.dailyRequestLimit,
+          aiOpenAiApiKey: '',
+        }, { emitEvent: false });
+      },
+      error: () => {
+        this.brainSettingsError = 'Brain Pro settings could not be loaded right now.';
+      },
+    });
+  }
+
+  testBrainProvider(): void {
+    if (!this.canManageCompanySetup) return;
+
+    this.brainSettingsMessage = '';
+    this.brainSettingsError = '';
+    this.brainProviderTesting = true;
+    this.brainApi.testProvider().pipe(
+      finalize(() => (this.brainProviderTesting = false))
+    ).subscribe({
+      next: (result) => {
+        if (result.ok) {
+          this.brainSettingsMessage = `Brain Pro provider connected: ${result.providerLabel}${result.model ? ` (${result.model})` : ''}.`;
+        } else {
+          this.brainSettingsError = result.message || 'Brain Pro provider is not connected.';
+        }
+      },
+      error: () => {
+        this.brainSettingsError = 'Brain Pro provider test failed.';
       },
     });
   }

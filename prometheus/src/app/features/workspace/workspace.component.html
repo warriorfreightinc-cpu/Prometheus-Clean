@@ -38,11 +38,17 @@
         <section class="brain-settings-card insight-card insight-card--plan" *ngIf="canManageCompanySetup" [formGroup]="brainSettingsForm">
           <div>
             <span class="eyebrow">Prometheus Brain settings</span>
-            <h3>Company memory and tools</h3>
+            <h3>Brain Pro and company AI</h3>
             <p>
-              Prometheus does not save company memory unless memory is enabled and a human approves the memory.
-              Provider tools stay off unless you allow them for this company.
+              Choose how Prometheus uses AI for this company. API keys stay server-side, provider actions stay approval-gated,
+              and deterministic Prometheus tools keep working if paid AI is unavailable.
             </p>
+          </div>
+
+          <div class="brain-provider-status" *ngIf="brainSettings?.ai as ai">
+            <span>{{ ai.providerMode }}</span>
+            <strong>{{ ai.providerKeyStatus }}</strong>
+            <em *ngIf="ai.providerKeyFingerprint">{{ ai.providerKeyFingerprint }}</em>
           </div>
 
           <div class="form-grid form-grid--dispatch">
@@ -60,6 +66,41 @@
               <input type="number" min="1" formControlName="auditRetentionDays" />
             </label>
 
+            <label class="field">
+              <span>AI provider</span>
+              <select formControlName="aiProviderMode">
+                <option value="local">Local LM Studio</option>
+                <option value="prometheusManaged">Prometheus managed</option>
+                <option value="companyOpenAi">Company OpenAI key</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Reasoning model</span>
+              <input type="text" formControlName="aiReasoningModel" />
+            </label>
+
+            <label class="field">
+              <span>Economy model</span>
+              <input type="text" formControlName="aiEconomyModel" />
+            </label>
+
+            <label class="field">
+              <span>Monthly budget</span>
+              <input type="number" min="1" formControlName="aiMonthlyBudgetUsd" />
+            </label>
+
+            <label class="field">
+              <span>Daily requests</span>
+              <input type="number" min="1" formControlName="aiDailyRequestLimit" />
+            </label>
+
+            <label class="field field--wide">
+              <span>OpenAI API key</span>
+              <input type="password" formControlName="aiOpenAiApiKey" placeholder="Paste a new key only when adding or rotating" autocomplete="off" />
+            </label>
+
             <label class="brain-settings-toggle">
               <input type="checkbox" formControlName="allowProviderTools" />
               <span>Allow provider tools</span>
@@ -72,6 +113,9 @@
           <div class="quick-actions quick-actions--compact">
             <button class="primary-button" type="button" (click)="saveBrainSettings()" [disabled]="brainSettingsSaving">
               {{ brainSettingsSaving ? 'Saving...' : 'Save Brain settings' }}
+            </button>
+            <button class="ghost-button" type="button" (click)="testBrainProvider()" [disabled]="brainProviderTesting">
+              {{ brainProviderTesting ? 'Testing...' : 'Test provider' }}
             </button>
           </div>
         </section>

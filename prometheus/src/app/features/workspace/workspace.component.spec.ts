@@ -166,6 +166,29 @@ describe('WorkspaceComponent workspace tabs', () => {
       approve: () => of({}),
       reject: () => of({}),
       updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of({})),
+      getSettings: jasmine.createSpy('getSettings').and.returnValue(of({
+        memoryMode: 'off',
+        auditRetentionDays: 365,
+        allowProviderTools: false,
+        ai: {
+          providerMode: 'local',
+          reasoningModel: 'gpt-5.5',
+          economyModel: 'gpt-5.4-mini',
+          monthlyBudgetUsd: 50,
+          dailyRequestLimit: 500,
+          providerKeyStatus: 'missing',
+          providerKeyFingerprint: null,
+          providerLastTestedAt: null,
+          providerLastError: null,
+        },
+      })),
+      testProvider: jasmine.createSpy('testProvider').and.returnValue(of({
+        ok: true,
+        providerMode: 'local',
+        providerLabel: 'Local OpenAI-compatible server',
+        model: 'gpt-5.4-mini',
+        message: 'Prometheus Brain Pro connected.',
+      })),
     };
     const adminUser = userWithRole('admin');
     const fixture = await createFixture({
@@ -175,13 +198,18 @@ describe('WorkspaceComponent workspace tabs', () => {
     const component = fixture.componentInstance;
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Prometheus Brain settings');
-    expect(fixture.nativeElement.textContent).toContain('Prometheus does not save company memory unless memory is enabled and a human approves the memory.');
+    expect(fixture.nativeElement.textContent).toContain('Brain Pro and company AI');
 
     component.brainSettingsForm.patchValue({
       memoryMode: 'companyManaged',
       auditRetentionDays: 90,
       allowProviderTools: true,
+      aiProviderMode: 'companyOpenAi',
+      aiReasoningModel: 'gpt-5.5',
+      aiEconomyModel: 'gpt-5.4-mini',
+      aiMonthlyBudgetUsd: 100,
+      aiDailyRequestLimit: 250,
+      aiOpenAiApiKey: 'sk-proj-abcdef1234567890',
     });
     fixture.detectChanges();
     const saveButton = fixture.nativeElement.querySelector('.brain-settings-card button') as HTMLButtonElement;
@@ -191,8 +219,63 @@ describe('WorkspaceComponent workspace tabs', () => {
       memoryMode: 'companyManaged',
       auditRetentionDays: 90,
       allowProviderTools: true,
+      ai: {
+        providerMode: 'companyOpenAi',
+        reasoningModel: 'gpt-5.5',
+        economyModel: 'gpt-5.4-mini',
+        monthlyBudgetUsd: 100,
+        dailyRequestLimit: 250,
+        openAiApiKey: 'sk-proj-abcdef1234567890',
+      },
     });
     expect(component.brainSettingsMessage).toBe('Brain settings saved.');
+  });
+
+  it('tests Brain Pro provider without exposing a saved key', async () => {
+    const brainApi = {
+      sendPrompt: () => of({ handled: true, intent: 'generalTransportation', answer: 'Prometheus Brain is ready.' }),
+      approve: () => of({}),
+      reject: () => of({}),
+      listApprovals: () => of([]),
+      updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of({})),
+      getSettings: jasmine.createSpy('getSettings').and.returnValue(of({
+        memoryMode: 'off',
+        auditRetentionDays: 365,
+        allowProviderTools: false,
+        ai: {
+          providerMode: 'companyOpenAi',
+          reasoningModel: 'gpt-5.5',
+          economyModel: 'gpt-5.4-mini',
+          monthlyBudgetUsd: 50,
+          dailyRequestLimit: 500,
+          providerKeyStatus: 'connected',
+          providerKeyFingerprint: 'sk-p...7890',
+          providerLastTestedAt: null,
+          providerLastError: null,
+        },
+      })),
+      testProvider: jasmine.createSpy('testProvider').and.returnValue(of({
+        ok: true,
+        providerMode: 'companyOpenAi',
+        providerLabel: 'Company OpenAI',
+        model: 'gpt-5.5',
+        message: 'Prometheus Brain Pro connected.',
+      })),
+    };
+    const adminUser = userWithRole('admin');
+    const fixture = await createFixture({
+      brainApi,
+      session: { currentUser: adminUser, restoreSession: () => of(true) },
+    });
+    const component = fixture.componentInstance;
+
+    fixture.detectChanges();
+    component.testBrainProvider();
+
+    expect(brainApi.testProvider).toHaveBeenCalled();
+    expect(component.brainSettingsMessage).toContain('Company OpenAI');
+    expect(component.brainSettingsForm.get('aiOpenAiApiKey')?.value).toBe('');
+    expect(fixture.nativeElement.textContent).toContain('sk-p...7890');
   });
 
   it('does not show Brain settings to carrier dispatcher desks', async () => {

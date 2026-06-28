@@ -466,6 +466,31 @@
   grid-column: span 3;
 }
 
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.brain-provider-status {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.brain-provider-status span,
+.brain-provider-status em {
+  color: #9fbce0;
+  font-size: 13px;
+}
+
+.brain-provider-status strong {
+  color: #55d5ff;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
 .quick-actions,
 .chat-input,
 .composer {
