@@ -31,6 +31,19 @@ describe("parseAgentCommand", () => {
     });
   });
 
+  it("parses state-only availability searches", () => {
+    expect(parseAgentCommand("show available trucks in WA")).toMatchObject({
+      intent: "search",
+      originCity: "",
+      originState: "WA",
+    });
+    expect(parseAgentCommand("search loads in IL")).toMatchObject({
+      intent: "search",
+      originCity: "",
+      originState: "IL",
+    });
+  });
+
   it("parses map requests", () => {
     expect(parseAgentCommand("show me a map with loads around my truck in Houston TX")).toMatchObject({
       intent: "search",

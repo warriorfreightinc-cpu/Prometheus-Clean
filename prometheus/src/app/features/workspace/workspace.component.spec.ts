@@ -958,6 +958,26 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(component.chatbbError).toBe('');
   });
 
+  it('matches state-only market searches by exact state code', () => {
+    const component = createComponent();
+    const location = (component as any).parseMarketLocation('show available trucks in WA');
+
+    expect(location).toEqual(jasmine.objectContaining({ label: 'WA', state: 'WA' }));
+    expect((component as any).postMatchesMarketLocation(createPost({
+      origin: { type: 'place', place: { city: 'Seattle', state: 'WA' } },
+    }), location)).toBeTrue();
+    expect((component as any).postMatchesMarketLocation(createPost({
+      origin: { type: 'place', place: { city: 'Chicago', state: 'IL' } },
+    }), location)).toBeFalse();
+    expect((component as any).postMatchesMarketLocation(createPost({
+      origin: { type: 'place', place: { city: 'Chicago', state: 'IL' } },
+      destination: { type: 'place', place: { city: 'Seattle', state: 'WA' } },
+    }), location)).toBeFalse();
+    expect((component as any).candidateMatchesMarketLocation({
+      summary: { lane: { origin: 'Tacoma, WA', destination: 'Portland, OR' } },
+    }, location)).toBeTrue();
+  });
+
   it('answers casual greetings locally without locking the AI Transportation Center composer', () => {
     const brainApi = {
       sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(NEVER),

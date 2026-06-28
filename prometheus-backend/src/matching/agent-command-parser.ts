@@ -21,6 +21,14 @@ const LENGTH_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*(\d{1,2})\s*(
 const LOCATION_PATTERN = /\b(?:out of|around|near|in|from)\s+(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map)\b|$)/i;
 const IN_CITY_STATE_PATTERN = /\bin\s+([a-zA-Z .'-]+?)(?:,\s*|\s+)([A-Z]{2})\b/i;
 const STATE_PATTERN = /^(.+?)(?:,\s*|\s+)([A-Z]{2})$/i;
+const US_STATE_CODES = new Set([
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+  "DC",
+]);
 
 export function parseAgentCommand(prompt: string): ParsedAgentCommand {
   const text = String(prompt ?? "").trim();
@@ -88,6 +96,11 @@ function parseLocation(text: string): { city: string; state: string } {
   }
   if (!rawLocation) {
     return { city: "", state: "" };
+  }
+
+  const stateOnly = rawLocation.toUpperCase();
+  if (US_STATE_CODES.has(stateOnly)) {
+    return { city: "", state: stateOnly };
   }
 
   const stateMatch = rawLocation.match(STATE_PATTERN);

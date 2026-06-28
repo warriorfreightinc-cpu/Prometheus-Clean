@@ -241,6 +241,21 @@ type LoadBoardItem = {
   canApproveAccess: boolean;
   load: PrometheusLoad;
 };
+type MarketLocationFilter = {
+  label: string;
+  city?: string;
+  state?: string;
+  stateOnly?: boolean;
+};
+
+const US_STATE_CODES = new Set([
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+  'DC',
+]);
 
 const CAPACITY_OPTIONS: Option<string>[] = [
   { value: 'full', label: 'Full' },
@@ -3731,7 +3746,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.describeLocalAvailability(location);
   }
 
-  private describeLocalAvailability(location: { label: string } | null): void {
+  private describeLocalAvailability(location: MarketLocationFilter | null): void {
     const counterpartMatches = this.matchCandidates.filter((candidate) => this.candidateMatchesMarketLocation(candidate, location));
     const ownPosts = this.allWorkspacePosts.filter((post) => this.postMatchesMarketLocation(post, location));
     const lines: string[] = [
@@ -3756,7 +3771,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     this.appendMatchingBubble('assistant', lines.join('\n'), 'Prometheus');
   }
 
-  private describeRateMarket(location: { label: string } | null): void {
+  private describeRateMarket(location: MarketLocationFilter | null): void {
     const entries = [
       ...this.matchCandidates.map((candidate) => ({
         lane: `${candidate.summary.lane.origin || 'Origin open'} -> ${candidate.summary.lane.destination || 'Destination open'}`,
@@ -3794,7 +3809,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     );
   }
 
-  private describeLocalRatio(location: { label: string } | null): void {
+  private describeLocalRatio(location: MarketLocationFilter | null): void {
     const ownCount = this.allWorkspacePosts.filter((post) => this.postMatchesMarketLocation(post, location)).length;
     const counterpartCount = this.matchCandidates.filter((candidate) => this.candidateMatchesMarketLocation(candidate, location)).length;
     const loadCount = this.isBroker ? ownCount : counterpartCount;
@@ -3808,16 +3823,20 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
     );
   }
 
-  private parseMarketLocation(prompt: string): { label: string } | null {
+  private parseMarketLocation(prompt: string): MarketLocationFilter | null {
     const cleaned = prompt.replace(/\s+/g, ' ').trim();
     const directMatch = cleaned.match(/\b(?:out of|from|near|around|in)\s+([a-z][a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i);
     const fallbackMatch = directMatch ? null : cleaned.match(/\b([a-z][a-z .'-]+?),\s*([a-z]{2})\b/i);
     const match = directMatch ?? fallbackMatch;
-    if (!match) return null;
+    if (!match) {
+      const stateOnlyMatch = cleaned.match(/\b(?:out of|from|near|around|in)\s+([a-z]{2})\b/i);
+      const state = stateOnlyMatch?.[1]?.toUpperCase() ?? '';
+      return US_STATE_CODES.has(state) ? { label: state, state, stateOnly: true } : null;
+    }
 
     const city = this.titleCaseLocationPart(directMatch ? match[1] : this.extractTrailingLocationWords(match[1]));
     const state = match[2].toUpperCase();
-    return { label: `${city}, ${state}` };
+    return { label: `${city}, ${state}`, city, state };
   }
 
   private extractTrailingLocationWords(value: string): string {
@@ -3838,18 +3857,46 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       .join(' ');
   }
 
-  private postMatchesMarketLocation(post: WorkspacePost, location: { label: string } | null): boolean {
+  private postMatchesMarketLocation(post: WorkspacePost, location: MarketLocationFilter | null): boolean {
     if (!location) return true;
+    if (location.stateOnly && location.state) {
+      return this.postLocationMatchesState(post.origin, location.state);
+    }
     const target = location.label.toLowerCase();
     return this.formatLocation(post.origin).toLowerCase().includes(target)
       || this.formatLocation(post.destination).toLowerCase().includes(target);
   }
 
-  private candidateMatchesMarketLocation(candidate: MatchCandidate, location: { label: string } | null): boolean {
+  private candidateMatchesMarketLocation(candidate: MatchCandidate, location: MarketLocationFilter | null): boolean {
     if (!location) return true;
+    if (location.stateOnly && location.state) {
+      return this.locationTextMatchesState(candidate.summary.lane.origin, location.state);
+    }
     const target = location.label.toLowerCase();
     return String(candidate.summary.lane.origin ?? '').toLowerCase().includes(target)
       || String(candidate.summary.lane.destination ?? '').toLowerCase().includes(target);
+  }
+
+  private postLocationMatchesState(location: PostLocation | undefined, state: string): boolean {
+    const target = state.toUpperCase();
+    if (!location || !US_STATE_CODES.has(target)) return false;
+
+    if (location.type === 'states' && Array.isArray(location.states)) {
+      return location.states.some((entry) => String(entry ?? '').toUpperCase() === target);
+    }
+
+    const place = location.place;
+    if (typeof place === 'string') return this.locationTextMatchesState(place, target);
+    if (this.isRecord(place)) return this.stringValue(place['state']).toUpperCase() === target;
+
+    return this.locationTextMatchesState(this.formatLocation(location), target);
+  }
+
+  private locationTextMatchesState(value: unknown, state: string): boolean {
+    const text = String(value ?? '').trim();
+    if (!text) return false;
+    const escapedState = state.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[,\\s])${escapedState}(?:\\b|$)`, 'i').test(text);
   }
 
   private handleMatchingAssistantCommandResponse(response: MatchingAssistantEvent | AssistantRoomResponse): void {
