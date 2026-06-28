@@ -948,6 +948,77 @@ describe('WorkspaceComponent workspace tabs', () => {
     expect(answer).toContain('book match 2');
   });
 
+  it('checks remaining posted loads when the user asks about the rest', () => {
+    const matchingApi = {
+      createSnapshot: jasmine.createSpy('createSnapshot').and.callFake((payload: { sourcePostId: string }) => of({
+        companyId: 'company-1',
+        sourcePostId: payload.sourcePostId,
+        sourcePostType: 'brokerPost',
+        generatedByUserId: 'broker-user',
+        provider: 'test',
+        status: 'ready',
+        candidateCount: payload.sourcePostId === 'broker-load-2' ? 1 : 0,
+        sourceSummary: {
+          companyId: 'company-1',
+          lane: { origin: 'Chicago, IL', destination: 'Memphis, TN' },
+          equipment: ['V'],
+          weight: 42000,
+          rate: null,
+          publishedAt: null,
+          reference: payload.sourcePostId,
+        },
+        candidates: payload.sourcePostId === 'broker-load-2'
+          ? [{
+              matchPostId: 'carrier-truck-1',
+              matchPostType: 'carrierPost',
+              score: 0.91,
+              scoreBreakdown: {} as any,
+              summary: {
+                companyId: 'carrier-company-1',
+                publisherId: 'carrier-user-1',
+                lane: { origin: 'Chicago, IL', destination: 'Memphis, TN' },
+                equipment: ['V'],
+                weight: 45000,
+                rate: null,
+                publishedAt: null,
+                reference: 'TRUCK-1',
+              },
+              routeMetrics: {} as any,
+            }]
+          : [],
+      })),
+    };
+    const brainApi = {
+      sendPrompt: jasmine.createSpy('sendPrompt').and.returnValue(NEVER),
+    };
+    const component = createComponent({ matchingApi, brainApi });
+    component.user = userWithRole('broker');
+    component.activeTab = 'matching';
+    component.selectedPostId = 'broker-load-1';
+    component.posts = [
+      createPost({ _id: 'broker-load-1', destination: { type: 'place', place: 'Dallas, TX' } }) as any,
+      createPost({ _id: 'broker-load-2', destination: { type: 'place', place: 'Memphis, TN' } }) as any,
+      createPost({ _id: 'broker-load-3', destination: { type: 'place', place: 'Philadelphia, PA' } }) as any,
+    ];
+    component.chatbbPrompt = 'how about the rest ?';
+
+    component.submitMatchingConsole();
+
+    expect(brainApi.sendPrompt).not.toHaveBeenCalled();
+    expect(matchingApi.createSnapshot).toHaveBeenCalledTimes(2);
+    expect(matchingApi.createSnapshot).toHaveBeenCalledWith({ sourcePostType: 'brokerPost', sourcePostId: 'broker-load-2' });
+    expect(matchingApi.createSnapshot).toHaveBeenCalledWith({ sourcePostType: 'brokerPost', sourcePostId: 'broker-load-3' });
+    expect(component.chatbbLoading).toBeFalse();
+    expect(component.chatbbPrompt).toBe('');
+    expect(component.selectedPostId).toBe('broker-load-2');
+    expect(component.matchCandidates.length).toBe(1);
+    const answer = component.matchingConsoleMessages.at(-1)?.text ?? '';
+    expect(answer).toContain('I checked the rest');
+    expect(answer).toContain('Memphis, TN');
+    expect(answer).toContain('Philadelphia, PA');
+    expect(answer).toContain('1 matching');
+  });
+
   it('stages pasted import rows for review instead of posting immediately', () => {
     const postsApi = {
       createBrokerPost: jasmine.createSpy('createBrokerPost'),

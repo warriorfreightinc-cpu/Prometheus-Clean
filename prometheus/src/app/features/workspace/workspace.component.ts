@@ -940,6 +940,12 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
   get counterpartLabel(): string {
     return this.isBroker ? 'Carrier matches' : 'Broker matches';
   }
+
+  private counterpartPostLabel(count = 2): string {
+    if (this.isBroker) return count === 1 ? 'truck' : 'trucks';
+    return count === 1 ? 'load' : 'loads';
+  }
+
   get showRouteIntelligencePanel(): boolean {
     return this.routeIntelligencePanel.open
       && (
@@ -2902,6 +2908,12 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       return true;
     }
 
+    if (this.isRemainingPostedMatchesCommand(normalized)) {
+      this.appendMatchingBubble('user', prompt, 'You');
+      this.describeRemainingPostedMatches();
+      return true;
+    }
+
     if (this.isRouteIntelligenceCommand(normalized)) {
       this.appendMatchingBubble('user', prompt, 'You');
       this.openMatchingRouteIntelligencePanel(this.parseRouteMatchIndex(normalized));
@@ -3166,6 +3178,16 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private isMatchListCommand(prompt: string): boolean {
     return prompt.includes('match') || (prompt.includes('show') && prompt.includes('option'));
+  }
+
+  private isRemainingPostedMatchesCommand(prompt: string): boolean {
+    const compact = prompt.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const referencesRemaining = /\b(rest|remaining|others)\b/.test(compact)
+      || /\bother\s+(ones|lanes|loads|trucks|posts|options)\b/.test(compact);
+    if (!referencesRemaining) return false;
+
+    return /^(?:the\s+)?rest$/.test(compact)
+      || /\b(how|what|check|show|find|match|matching|any|about)\b/.test(compact);
   }
 
   private isMarketQuestion(prompt: string): boolean {
@@ -3808,6 +3830,88 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
       `${index + 1}. ${this.formatLane(post)} | ${this.formatEquipment(post)} | ${this.formatMetric(post)}`
     ));
     this.appendMatchingBubble('assistant', `Here are your live posted ${this.dispatchRoleLabel}:\n${lines.join('\n')}`, 'Prometheus');
+  }
+
+  private describeRemainingPostedMatches(): void {
+    if (!this.user) {
+      this.appendMatchingBubble('assistant', 'Sign in first so Prometheus can check your posted lanes.', 'Prometheus');
+      return;
+    }
+
+    if (!this.posts.length) {
+      this.appendMatchingBubble('assistant', `No ${this.dispatchRoleLabel} are posted on this account yet.`, 'Prometheus');
+      return;
+    }
+
+    const entries = this.posts.map((post, index) => ({ post, index }));
+    const selectedIndex = this.selectedPostId
+      ? entries.findIndex((entry) => entry.post._id === this.selectedPostId)
+      : -1;
+    const remainingEntries = selectedIndex >= 0
+      ? entries.filter((entry) => entry.index !== selectedIndex)
+      : entries;
+
+    if (!remainingEntries.length) {
+      this.appendMatchingBubble(
+        'assistant',
+        `That is the only live posted ${this.dispatchSingularLabel} on this account right now.`,
+        'Prometheus'
+      );
+      return;
+    }
+
+    const sourcePostType: MatchSourcePostType = this.user.role === 'broker' ? 'brokerPost' : 'carrierPost';
+    this.chatbbLoading = true;
+    this.chatbbError = '';
+
+    forkJoin(
+      remainingEntries.map((entry) => (
+        this.matchingApi.createSnapshot({ sourcePostType, sourcePostId: entry.post._id })
+          .pipe(catchError(() => of(null as MatchSnapshot | null)))
+      ))
+    ).pipe(finalize(() => (this.chatbbLoading = false))).subscribe({
+      next: (snapshots) => {
+        const results = remainingEntries.map((entry, index) => ({
+          ...entry,
+          snapshot: snapshots[index],
+        }));
+        const firstWithMatches = results.find((result) => (result.snapshot?.candidates?.length ?? 0) > 0);
+
+        if (firstWithMatches?.snapshot) {
+          this.selectedPostId = firstWithMatches.post._id;
+          this.matchSnapshot = firstWithMatches.snapshot;
+          this.matchCandidates = firstWithMatches.snapshot.candidates ?? [];
+          this.matchError = '';
+        }
+
+        const lines = results.map((result) => {
+          const laneNumber = result.index + 1;
+          const lane = this.formatLane(result.post);
+          if (!result.snapshot) return `${laneNumber}. ${lane}: I could not refresh matches for this lane yet.`;
+
+          const count = result.snapshot.candidates?.length ?? 0;
+          return count
+            ? `${laneNumber}. ${lane}: ${count} matching hazmat ${this.counterpartPostLabel(count)} loaded.`
+            : `${laneNumber}. ${lane}: no matching hazmat ${this.counterpartPostLabel()} yet.`;
+        });
+        const nextStep = firstWithMatches
+          ? `I selected ${this.formatLane(firstWithMatches.post)} because it has live matches. Type "show matches" to review those options, or "book match 1" when you are ready.`
+          : `No other posted ${this.dispatchRoleLabel} have live hazmat ${this.counterpartPostLabel()} yet. I will keep watching as counterpart posts come in.`;
+
+        this.appendMatchingBubble(
+          'assistant',
+          `I checked the rest of your live posted ${this.dispatchRoleLabel}:\n${lines.join('\n')}\n${nextStep}`,
+          'Prometheus'
+        );
+      },
+      error: () => {
+        this.appendMatchingBubble(
+          'assistant',
+          'Prometheus could not refresh the rest of the posted lanes right now. Try again in a moment.',
+          'Prometheus'
+        );
+      },
+    });
   }
 
   private describeCurrentMatches(): void {
