@@ -59,4 +59,49 @@ describe("PostCarrierService", () => {
     expect(matchStage.$expr).toBeDefined();
     expect(matchStage.startDate).toBeUndefined();
   });
+
+  it("does not throw when broker-side search data is missing destination coordinates", async () => {
+    const aggregate = jest.fn().mockResolvedValue([]);
+    const service = new PostCarrierService(
+      { aggregate } as any,
+      {} as any,
+      { findById: jest.fn().mockResolvedValue({ blacklist: [] }) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    ) as any;
+
+    service.buildSearchWindow = jest.fn().mockResolvedValue({ start: null, end: null });
+    service.buildDateOverlapExpr = jest.fn().mockReturnValue(null);
+
+    await expect(
+      service.doSearchOrineDestination(
+        {
+          equipment: ["V", "VZ"],
+          length: 53,
+          weight: 42000,
+          dhoRadius: 50,
+          dhdRadius: 50,
+          origin: {
+            location: { coordinates: { lat: 41.8781, lng: -87.6298 } },
+          },
+          destination: {
+            type: "place",
+            place: { state: "TX" },
+          },
+        },
+        ["full", "Full", "FULL"],
+        "user-1",
+      )
+    ).resolves.toEqual([]);
+
+    const pipeline = aggregate.mock.calls[0][0];
+    const matchStage = pipeline.find((stage: any) => stage.$match).$match;
+    expect(matchStage.$or.some((clause: any) => clause["destination.geoLocation"])).toBe(false);
+  });
 });

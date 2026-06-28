@@ -367,6 +367,61 @@ export class PostCarrierService {
     let publishSearchDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 4);
     const dateWindow = await this.buildSearchWindow(data);
     const dateExpr = this.buildDateOverlapExpr('startDate', 'endDate', dateWindow);
+    const originPoint = this.toMongoPoint(data?.origin?.location);
+    const destinationPoint = this.toMongoPoint(data?.destination?.location);
+    const destinationState = data?.destination?.place?.state;
+
+    if (!originPoint) {
+      return [];
+    }
+
+    const originGeoWithin = {
+      $geoWithin: {
+        $centerSphere: [
+          originPoint.coordinates,
+          data.dhoRadius / 3958.8
+        ]
+      }
+    };
+    const destinationClauses: any[] = [
+      {
+        destination: null,
+        'origin.geoLocation': originGeoWithin
+      }
+    ];
+
+    if (destinationState) {
+      destinationClauses.push(
+        {
+          'destination.type': 'states',
+          'origin.geoLocation': originGeoWithin,
+          'destination.states': {
+            $in: [destinationState]
+          }
+        },
+        {
+          'destination.type': 'zones',
+          'origin.geoLocation': originGeoWithin,
+          'destination.zones.states': destinationState
+        }
+      );
+    }
+
+    if (destinationPoint && data.dhdRadius) {
+      destinationClauses.push({
+        'destination.type': 'place',
+        'origin.geoLocation': originGeoWithin,
+        'destination.geoLocation': {
+          $geoWithin: {
+            $centerSphere: [
+              destinationPoint.coordinates,
+              data.dhdRadius / 3958.8
+            ]
+          }
+        }
+      });
+    }
+
     const matchStage: any = {
       companyId: { $nin: blacklist },
       equipment: { $in: data.equipment },
@@ -375,64 +430,7 @@ export class PostCarrierService {
       weight: { $gte: data.weight },
       publishedAt: { $gte: publishSearchDate },
       ...(dateExpr ? { $expr: dateExpr } : {}),
-      $or: [
-        {
-          destination: null,
-          'origin.geoLocation': {
-            $geoWithin: {
-              $centerSphere: [
-                [data.origin.location.coordinates.lng, data.origin.location.coordinates.lat],
-                data.dhoRadius / 3958.8
-              ]
-            }
-          }
-        },
-        {
-          'destination.type': 'states',
-          'origin.geoLocation': {
-            $geoWithin: {
-              $centerSphere: [
-                [data.origin.location.coordinates.lng, data.origin.location.coordinates.lat],
-                data.dhoRadius / 3958.8
-              ]
-            }
-          },
-          'destination.states': {
-            $in: [data.destination.place.state]
-          }
-        },
-        {
-          'destination.type': 'zones',
-          'origin.geoLocation': {
-            $geoWithin: {
-              $centerSphere: [
-                [data.origin.location.coordinates.lng, data.origin.location.coordinates.lat],
-                data.dhoRadius / 3958.8
-              ]
-            }
-          },
-          'destination.zones.states': data.destination.place.state
-        },
-        {
-          'destination.type': 'place',
-          'origin.geoLocation': {
-            $geoWithin: {
-              $centerSphere: [
-                [data.origin.location.coordinates.lng, data.origin.location.coordinates.lat],
-                data.dhoRadius / 3958.8
-              ]
-            }
-          },
-          'destination.geoLocation': {
-            $geoWithin: {
-              $centerSphere: [
-                [data.destination.location.coordinates.lng, data.destination.location.coordinates.lat],
-                data.dhdRadius / 3958.8
-              ]
-            }
-          }
-        }
-      ]
+      $or: destinationClauses
     };
 
     let results = await this.PostModel.aggregate(
@@ -479,9 +477,9 @@ export class PostCarrierService {
     for (let i = 0; i < results.length; i++) {
 
       results[i].dho = this.findDistance(results[i].origin.location.coordinates.lat, results[i].origin.location.coordinates.lng, data.origin.location.coordinates.lat, data.origin.location.coordinates.lng)
-      if (results[i].destination?.type === 'place') {
+      if (results[i].destination?.type === 'place' && destinationPoint) {
 
-        results[i].dhd = this.findDistance(results[i].destination.location.coordinates.lat, results[i].destination.location.coordinates.lng, data.destination.location.coordinates.lat, data.destination.location.coordinates.lng)
+        results[i].dhd = this.findDistance(results[i].destination.location.coordinates.lat, results[i].destination.location.coordinates.lng, destinationPoint.coordinates[1], destinationPoint.coordinates[0])
       } else {
         results[i].dhd = null;
       }

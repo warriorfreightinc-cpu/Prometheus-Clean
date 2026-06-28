@@ -1151,6 +1151,10 @@ export class PostBrokerService {
     let today = new Date();
     let publishSearchDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 4);
     try {
+      const originPoint = this.toMongoPoint(data?.origin?.location);
+      if (!originPoint) {
+        return [];
+      }
       const dateExpr = this.buildDateOverlapExpr(FIRST_STOP_START_FIELD, FIRST_STOP_END_FIELD, dateWindow);
       const startDateRange: any = {};
       if (dateWindow?.start) {
@@ -1171,7 +1175,7 @@ export class PostBrokerService {
       let posts = await this.PostModel.aggregate([
         {
           $geoNear: {
-            near: this.toMongoPoint(data.origin.location),
+            near: originPoint,
             key: 'origin.geoLocation',
             distanceField: "dho",
             maxDistance: data.dhoRadius * 1609.344,
