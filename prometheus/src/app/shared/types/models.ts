@@ -292,6 +292,9 @@ export type MatchSourcePostType = 'carrierPost' | 'brokerPost';
 
 export type PrometheusBrainSource = 'matching' | 'booking' | 'direct' | 'company' | 'loads' | 'admin';
 
+export type BrainAiProviderMode = 'prometheusManaged' | 'companyOpenAi' | 'local' | 'disabled';
+export type BrainAiProviderKeyStatus = 'missing' | 'connected' | 'failed' | 'rotating';
+
 export type PrometheusBrainApprovalStatus =
   | 'pending'
   | 'approved'
@@ -354,13 +357,51 @@ export interface PrometheusBrainPromptResponse {
   intent: string;
   eventId?: string;
   approval?: PrometheusBrainApproval;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    routeIntelligence?: RoutingIntelligenceResponse;
+    ai?: {
+      providerMode: string;
+      providerLabel: string;
+      model: string | null;
+      usedFallback: boolean;
+    };
+    [key: string]: unknown;
+  };
+}
+
+export interface BrainAiSettingsView {
+  providerMode: BrainAiProviderMode;
+  reasoningModel: string;
+  economyModel: string;
+  monthlyBudgetUsd: number;
+  dailyRequestLimit: number;
+  providerKeyStatus: BrainAiProviderKeyStatus;
+  providerKeyFingerprint?: string | null;
+  providerLastTestedAt?: string | Date | null;
+  providerLastError?: string | null;
+}
+
+export interface BrainSettingsView {
+  memoryMode: 'off' | 'companyManaged' | 'prometheusManaged';
+  auditRetentionDays: number;
+  allowProviderTools: boolean;
+  ai: BrainAiSettingsView;
+}
+
+export interface BrainAiSettingsPayload {
+  providerMode?: BrainAiProviderMode;
+  reasoningModel?: string;
+  economyModel?: string;
+  monthlyBudgetUsd?: number;
+  dailyRequestLimit?: number;
+  openAiApiKey?: string;
 }
 
 export interface UpdateBrainSettingsPayload {
   memoryMode?: 'off' | 'companyManaged' | 'prometheusManaged';
   auditRetentionDays?: number;
   allowProviderTools?: boolean;
+  ai?: BrainAiSettingsPayload;
 }
 
 export type MatchOpportunityTier =

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  BrainSettingsView,
   PrometheusBrainApproval,
   PrometheusBrainEvent,
   PrometheusBrainPromptRequest,
@@ -35,5 +36,13 @@ export class BrainApiService {
 
   updateSettings(payload: UpdateBrainSettingsPayload): Observable<unknown> {
     return this.http.patch('brain/settings', payload);
+  }
+
+  getSettings(): Observable<BrainSettingsView> {
+    return this.http.get<BrainSettingsView>('brain/settings');
+  }
+
+  testProvider(): Observable<{ ok: boolean; providerMode: string; providerLabel: string; model: string | null; message: string }> {
+    return this.http.post<{ ok: boolean; providerMode: string; providerLabel: string; model: string | null; message: string }>('brain/settings/test-provider', {});
   }
 }
