@@ -3,7 +3,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
-import { normalizeBrainSettings } from "./brain-settings.util";
+import { BrainSettingsService } from "./brain-settings.service";
 import { PrometheusBrainApproval } from "./interface/prometheus-brain-approval.interface";
 
 export interface BrainSaveMemoryInput {
@@ -26,29 +26,16 @@ export class BrainMemoryService {
     private readonly companyModel: Model<any>,
     @Inject(forwardRef(() => BrainApprovalService))
     private readonly approvals: BrainApprovalService,
-    private readonly events: BrainEventService
+    private readonly events: BrainEventService,
+    private readonly settings: BrainSettingsService
   ) {}
 
   async getCompanySettings(companyId: string) {
-    const company = await this.companyModel.findById(companyId).lean<any>();
-    return normalizeBrainSettings(company?.brainSettings);
+    return this.settings.getCompanySettings(companyId);
   }
 
   async updateCompanySettings(companyId: string, userId: string, data: any) {
-    const nextSettings = normalizeBrainSettings(data);
-    return this.companyModel
-      .findByIdAndUpdate(
-        companyId,
-        {
-          brainSettings: {
-            ...nextSettings,
-            updatedBy: userId,
-            updatedAt: new Date(),
-          },
-        },
-        { new: true }
-      )
-      .lean<any>();
+    return this.settings.updateCompanySettings(companyId, userId, data);
   }
 
   async requestSaveMemory(input: BrainSaveMemoryInput) {

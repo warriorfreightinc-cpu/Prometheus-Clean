@@ -6,6 +6,7 @@ import { RoutingModule } from "../routing/routing.module";
 import { BrainApprovalService } from "./brain-approval.service";
 import { BrainEventService } from "./brain-event.service";
 import { BrainMemoryService } from "./brain-memory.service";
+import { BrainSettingsService } from "./brain-settings.service";
 import { PrometheusBrainController } from "./prometheus-brain.controller";
 import { PrometheusBrainService } from "./prometheus-brain.service";
 import { PrometheusBrainApprovalSchema } from "./schema/prometheus-brain-approval.schema";
@@ -29,12 +30,14 @@ import { PrometheusBrainMemorySchema } from "./schema/prometheus-brain-memory.sc
     BrainEventService,
     BrainApprovalService,
     BrainMemoryService,
+    BrainSettingsService,
   ],
   exports: [
     PrometheusBrainService,
     BrainEventService,
     BrainApprovalService,
     BrainMemoryService,
+    BrainSettingsService,
   ],
 })
 export class BrainModule {}

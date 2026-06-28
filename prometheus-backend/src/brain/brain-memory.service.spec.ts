@@ -5,8 +5,12 @@ describe("BrainMemoryService", () => {
     memoryModel: any,
     companyModel: any,
     approvals: any,
-    events: any = { record: jest.fn() }
-  ) => new BrainMemoryService(memoryModel, companyModel, approvals, events);
+    events: any = { record: jest.fn() },
+    settings: any = {
+      getCompanySettings: jest.fn().mockResolvedValue({ memoryMode: "off" }),
+      updateCompanySettings: jest.fn(),
+    }
+  ) => new BrainMemoryService(memoryModel, companyModel, approvals, events, settings);
 
   const memoryInput = {
     companyId: "company-1",
@@ -51,8 +55,12 @@ describe("BrainMemoryService", () => {
     const approvals = {
       createRequest: jest.fn().mockResolvedValue({ _id: "approval-1", status: "pending" }),
     };
+    const settings = {
+      getCompanySettings: jest.fn().mockResolvedValue({ memoryMode: "companyManaged" }),
+      updateCompanySettings: jest.fn(),
+    };
 
-    const result = await createService({}, companyModel, approvals).requestSaveMemory(memoryInput);
+    const result = await createService({}, companyModel, approvals, { record: jest.fn() }, settings).requestSaveMemory(memoryInput);
 
     expect(result).toEqual({ _id: "approval-1", status: "pending" });
     expect(approvals.createRequest).toHaveBeenCalledWith(expect.objectContaining({

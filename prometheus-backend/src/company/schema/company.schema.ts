@@ -119,6 +119,38 @@ export const CompanySchema = new mongoose.Schema<Company>(
         type: Boolean,
         default: false
       },
+      ai: {
+        providerMode: {
+          type: String,
+          enum: ["prometheusManaged", "companyOpenAi", "local", "disabled"],
+          default: "local"
+        },
+        reasoningModel: {
+          type: String,
+          default: "gpt-5.5"
+        },
+        economyModel: {
+          type: String,
+          default: "gpt-5.4-mini"
+        },
+        monthlyBudgetUsd: {
+          type: Number,
+          default: 50
+        },
+        dailyRequestLimit: {
+          type: Number,
+          default: 500
+        },
+        providerKeyStatus: {
+          type: String,
+          enum: ["missing", "connected", "failed", "rotating"],
+          default: "missing"
+        },
+        providerKeyFingerprint: String,
+        providerLastTestedAt: Date,
+        providerLastError: String,
+        encryptedOpenAiApiKey: String
+      },
       updatedBy: String,
       updatedAt: Date
     },

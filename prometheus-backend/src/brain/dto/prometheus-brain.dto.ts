@@ -1,5 +1,16 @@
 import { PrometheusBrainSource } from "../interface/prometheus-brain-event.interface";
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class PrometheusBrainPromptDTO {
   @IsString()
@@ -19,6 +30,34 @@ export class PrometheusBrainPromptDTO {
   };
 }
 
+export class BrainAiSettingsDTO {
+  @IsOptional()
+  @IsIn(["prometheusManaged", "companyOpenAi", "local", "disabled"])
+  providerMode?: "prometheusManaged" | "companyOpenAi" | "local" | "disabled";
+
+  @IsOptional()
+  @IsString()
+  reasoningModel?: string;
+
+  @IsOptional()
+  @IsString()
+  economyModel?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  monthlyBudgetUsd?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  dailyRequestLimit?: number;
+
+  @IsOptional()
+  @IsString()
+  openAiApiKey?: string;
+}
+
 export class UpdateBrainSettingsDTO {
   @IsOptional()
   @IsIn(["off", "companyManaged", "prometheusManaged"])
@@ -32,4 +71,9 @@ export class UpdateBrainSettingsDTO {
   @IsOptional()
   @IsBoolean()
   allowProviderTools?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BrainAiSettingsDTO)
+  ai?: BrainAiSettingsDTO;
 }
