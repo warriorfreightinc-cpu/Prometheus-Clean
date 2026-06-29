@@ -4,6 +4,10 @@
   "description": "Standalone backend for the Prometheus operations app",
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",

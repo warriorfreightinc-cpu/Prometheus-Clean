@@ -1,0 +1,120 @@
+name: prometheus-staging
+region: nyc
+
+services:
+  - name: prometheus-api
+    source_dir: prometheus-backend
+    github:
+      repo: REPLACE_WITH_GITHUB_OWNER_OR_ORG/REPLACE_WITH_REPO
+      branch: codex/prometheus-brain-v1
+      deploy_on_push: false
+    build_command: npm ci --legacy-peer-deps && npm run build
+    run_command: npm run start:prod
+    instance_count: 1
+    instance_size_slug: basic-xs
+    envs:
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production
+      - key: DB_URI
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_DIGITALOCEAN_MANAGED_MONGODB_URI
+      - key: APP_URL
+        scope: RUN_TIME
+        value: https://REPLACE_WITH_STAGING_DOMAIN
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_LONG_RANDOM_SECRET
+      - key: JWT_EXPIRATION
+        scope: RUN_TIME
+        value: 30d
+      - key: SIGNATURE_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_32_CHARACTER_SECRET
+      - key: PROJECT_NAME
+        scope: RUN_TIME
+        value: Prometheus
+      - key: SUPPORT_EMAIL
+        scope: RUN_TIME
+        value: support@REPLACE_WITH_DOMAIN
+      - key: SUPPORT_PHONE
+        scope: RUN_TIME
+        value: REPLACE_WITH_SUPPORT_PHONE
+      - key: PROMETHEUS_SANDBOX_PROVIDERS
+        scope: RUN_TIME
+        value: "1"
+      - key: FMCSA_AUTHORITY_VALIDATION
+        scope: RUN_TIME
+        value: datahub
+      - key: STRIPE_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_STRIPE_TEST_OR_LIVE_KEY
+      - key: STRIPE_WEBHOOKS_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_STRIPE_WEBHOOK_SECRET
+      - key: STRIPE_RETURN_URL
+        scope: RUN_TIME
+        value: https://REPLACE_WITH_STAGING_DOMAIN/workspace
+      - key: MAIL_HOST
+        scope: RUN_TIME
+        value: REPLACE_WITH_SMTP_HOST
+      - key: MAIL_PORT
+        scope: RUN_TIME
+        value: "587"
+      - key: MAIL_PORT_SECURE
+        scope: RUN_TIME
+        value: "0"
+      - key: MAIL_USER
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_SMTP_USER
+      - key: MAIL_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_SMTP_PASSWORD
+      - key: OPENAI_BASE_URL
+        scope: RUN_TIME
+        value: ""
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_OPENAI_API_KEY_OR_EMPTY_FOR_BYOI_ONLY
+      - key: OPENAI_MODEL
+        scope: RUN_TIME
+        value: REPLACE_WITH_OPENAI_MODEL
+      - key: GOOGLE_MAPS_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_GOOGLE_MAPS_KEY_OR_EMPTY
+      - key: AgmCoreModule
+        scope: RUN_TIME
+        type: SECRET
+        value: REPLACE_WITH_GOOGLE_MAPS_KEY_OR_EMPTY
+
+static_sites:
+  - name: prometheus-web
+    source_dir: prometheus
+    github:
+      repo: REPLACE_WITH_GITHUB_OWNER_OR_ORG/REPLACE_WITH_REPO
+      branch: codex/prometheus-brain-v1
+      deploy_on_push: false
+    build_command: npm ci && npm run build
+    output_dir: dist/prometheus
+
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: prometheus-api
+    - match:
+        path:
+          prefix: /
+      component:
+        name: prometheus-web

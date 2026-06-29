@@ -3,6 +3,7 @@ import { Observable, Subject } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
 import { environment } from '../../../environments/environment';
 import { AuthSessionService } from '../auth/auth-session.service';
+import { resolveSocketEndpoint } from './socket-endpoint';
 
 export interface PrometheusSocketEvent {
   type: string;
@@ -22,22 +23,23 @@ export class PrometheusSocketService implements OnDestroy {
 
   connect(): void {
     const token = this.session.token;
-    const endpoint = this.resolveSocketEndpoint();
+    const endpoint = this.resolveSocketConfig();
 
     if (!token) {
       this.disconnect();
       return;
     }
 
-    if (this.socket && this.socketToken === token && this.socketEndpoint === endpoint && !this.socket.disconnected) {
+    if (this.socket && this.socketToken === token && this.socketEndpoint === endpoint.origin && !this.socket.disconnected) {
       return;
     }
 
     this.disconnect();
     this.socketToken = token;
-    this.socketEndpoint = endpoint;
+    this.socketEndpoint = endpoint.origin;
 
-    this.socket = io(endpoint, {
+    this.socket = io(endpoint.origin, {
+      path: endpoint.path,
       auth: {
         token: `Bearer ${token}`,
       },
@@ -62,17 +64,11 @@ export class PrometheusSocketService implements OnDestroy {
     this.notifySubject.complete();
   }
 
-  private resolveSocketEndpoint(): string {
-    const apiBaseUrl = environment.apiBaseUrl.trim();
-
+  private resolveSocketConfig(): { origin: string; path: string } {
     try {
-      const baseUrl = /^https?:\/\//i.test(apiBaseUrl)
-        ? new URL(apiBaseUrl)
-        : new URL(apiBaseUrl || '/', this.browserOrigin());
-
-      return baseUrl.origin;
+      return resolveSocketEndpoint(environment.apiBaseUrl.trim(), this.browserOrigin());
     } catch {
-      return apiBaseUrl.replace(/\/+$/, '');
+      return { origin: environment.apiBaseUrl.trim().replace(/\/+$/, ''), path: '/socket.io' };
     }
   }
 

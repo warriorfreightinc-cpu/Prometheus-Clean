@@ -7,6 +7,7 @@ import { useContainer } from "class-validator";
 import { join } from "path";
 import { AppModule } from "./app.module";
 import { JwtAuthGuard } from "./auth/auth.guard";
+import { resolveRuntimePort } from "./config/runtime-port";
 import { ClusterIOAdapter } from "./gateway/cluster-adapter";
 import { LoggingInterceptor } from "./interceptors/logging.interceptor";
 
@@ -42,7 +43,7 @@ async function bootstrap() {
 
   useContainer(app.select(AppModule), { fallbackOnErrors: true });
 
-  await app.listen(process.env.API_PORT);
+  await app.listen(resolveRuntimePort());
 }
 
 async function main() {

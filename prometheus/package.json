@@ -1,6 +1,10 @@
 {
   "name": "prometheus",
   "version": "0.0.0",
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 4300",
