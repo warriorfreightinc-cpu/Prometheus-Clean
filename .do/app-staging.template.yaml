@@ -105,9 +105,10 @@ static_sites:
     github:
       repo: warriorfreightinc-cpu/Prometheus-Clean
       branch: codex/prometheus-brain-v1
-      deploy_on_push: false
+    deploy_on_push: false
     build_command: npm ci && npm run build
     output_dir: dist/prometheus
+    catchall_document: index.html
 
 ingress:
   rules:
