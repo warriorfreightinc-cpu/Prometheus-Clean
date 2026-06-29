@@ -8,8 +8,21 @@ import { AppService } from "./app.service";
 import { Public } from "./shared/decorators/public.decorator";
 
 import * as states from "../json/state-boundry.json";
+import * as cityData from "./scripts/data/cities.json";
 import { XMLParser } from "fast-xml-parser";
 import { PostBrokerService } from "./post-broker/post.service";
+
+type LocalCityRecord = {
+  city?: string;
+  state_id?: string;
+  lat?: string | number;
+  lng?: string | number;
+  zips?: string;
+};
+
+const LOCAL_ZIP_OVERRIDES: Record<string, LocalCityRecord> = {
+  "40202": { city: "Louisville", state_id: "KY", lat: 38.2527, lng: -85.7585, zips: "40202" }
+};
 
 // @ApiTags("api")
 @ApiExcludeController()
@@ -22,6 +35,7 @@ export class AppController {
     //attributeNamePrefix: '@_',
     parseAttributeValue: true,
   });
+  private readonly localCities = ((cityData as any).cities ?? []) as LocalCityRecord[];
 
 
 
@@ -57,51 +71,72 @@ export class AppController {
       throw new BadRequestException("Address input is required.");
     }
 
+    const localResult = this.localGeocode(body, address);
+    if (localResult) {
+      return localResult;
+    }
+
     const googleApiKey = process.env.AgmCoreModule?.trim();
 
     if (googleApiKey) {
-      const response = await firstValueFrom(
-        this.http.get("https://maps.googleapis.com/maps/api/geocode/json", {
-          params: {
-            address,
-            key: googleApiKey
-          }
-        })
-      );
+      try {
+        const response = await firstValueFrom(
+          this.http.get("https://maps.googleapis.com/maps/api/geocode/json", {
+            params: {
+              address,
+              key: googleApiKey
+            }
+          })
+        );
 
-      const result = response?.data?.results?.[0];
-      const location = result?.geometry?.location;
-      if (location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng))) {
-        return {
-          found: true,
-          provider: "google-geocode",
-          input: address,
-          formattedAddress: result.formatted_address ?? address,
-          city: body?.city ?? "",
-          state: body?.state ?? "",
-          country: body?.country || "USA",
-          location: {
-            lat: Number(location.lat),
-            lng: Number(location.lng)
-          }
-        };
+        const result = response?.data?.results?.[0];
+        const location = result?.geometry?.location;
+        if (location && Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng))) {
+          return {
+            found: true,
+            provider: "google-geocode",
+            input: address,
+            formattedAddress: result.formatted_address ?? address,
+            city: body?.city ?? "",
+            state: body?.state ?? "",
+            country: body?.country || "USA",
+            location: {
+              lat: Number(location.lat),
+              lng: Number(location.lng)
+            }
+          };
+        }
+      } catch (error) {
+        console.log("[geocode] Google lookup unavailable, using fallback if possible.", error?.message ?? error);
       }
     }
 
-    const response = await firstValueFrom(
-      this.http.get("https://nominatim.openstreetmap.org/search", {
-        params: {
-          q: address,
-          format: "jsonv2",
-          limit: 1,
-          countrycodes: "us"
-        },
-        headers: {
-          "User-Agent": "Prometheus Local Workspace/1.0",
-          "Accept-Language": "en-US,en"
-        }
-      })
-    );
+    let response: any;
+    try {
+      response = await firstValueFrom(
+        this.http.get("https://nominatim.openstreetmap.org/search", {
+          params: {
+            q: address,
+            format: "jsonv2",
+            limit: 1,
+            countrycodes: "us"
+          },
+          headers: {
+            "User-Agent": "Prometheus Local Workspace/1.0",
+            "Accept-Language": "en-US,en"
+          }
+        })
+      );
+    } catch (error) {
+      console.log("[geocode] Nominatim lookup unavailable.", error?.message ?? error);
+      return {
+        found: false,
+        provider: "geocode-unavailable",
+        input: address,
+        formattedAddress: null,
+        location: null
+      };
+    }
 
     const result = Array.isArray(response?.data) ? response.data[0] : null;
     if (!result) {
@@ -127,6 +162,72 @@ export class AppController {
         lng: Number(result.lon)
       }
     };
+  }
+
+  private localGeocode(
+    body: { input?: string; city?: string; state?: string; country?: string },
+    address: string
+  ) {
+    const input = this.cleanPlacePart(body?.input);
+    const city = this.cleanPlacePart(body?.city);
+    const state = this.cleanPlacePart(body?.state).toUpperCase();
+    const inputState = input.toUpperCase();
+    const parsedInput = input.match(/^(.+?)(?:,\s*|\s+)([A-Z]{2})$/i);
+
+    const record =
+      (/^\d{5}$/.test(input) ? this.findLocalCityByZip(input) : null) ||
+      (city && state ? this.findLocalCityByName(city, state) : null) ||
+      (parsedInput ? this.findLocalCityByName(parsedInput[1], parsedInput[2]) : null) ||
+      (state ? this.findLocalCityByState(state) : null) ||
+      (/^[A-Z]{2}$/.test(inputState) ? this.findLocalCityByState(inputState) : null);
+
+    if (!record) return null;
+
+    const lat = Number(record.lat);
+    const lng = Number(record.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    const resolvedCity = city || record.city || "";
+    const resolvedState = state || String(record.state_id ?? "").toUpperCase();
+    const formattedAddress = [resolvedCity, resolvedState, body?.country || "USA"].filter(Boolean).join(", ");
+    return {
+      found: true,
+      provider: "local-city-data",
+      input: address,
+      formattedAddress,
+      city: resolvedCity,
+      state: resolvedState,
+      country: body?.country || "USA",
+      location: { lat, lng }
+    };
+  }
+
+  private findLocalCityByZip(zip: string): LocalCityRecord | null {
+    const override = LOCAL_ZIP_OVERRIDES[zip];
+    if (override) return override;
+    return this.localCities.find((city) =>
+      String(city.zips ?? "").split(/\s+/).includes(zip)
+    ) ?? null;
+  }
+
+  private findLocalCityByName(cityName: string, stateCode: string): LocalCityRecord | null {
+    const normalizedCity = this.cleanPlacePart(cityName).toLowerCase();
+    const normalizedState = this.cleanPlacePart(stateCode).toUpperCase();
+    return this.localCities.find((city) =>
+      String(city.city ?? "").toLowerCase() === normalizedCity &&
+      String(city.state_id ?? "").toUpperCase() === normalizedState
+    ) ?? null;
+  }
+
+  private findLocalCityByState(stateCode: string): LocalCityRecord | null {
+    const normalizedState = this.cleanPlacePart(stateCode).toUpperCase();
+    return this.localCities.find((city) =>
+      String(city.state_id ?? "").toUpperCase() === normalizedState
+    ) ?? null;
+  }
+
+  private cleanPlacePart(value: unknown): string {
+    return String(value ?? "").replace(/\s+/g, " ").trim();
   }
 
 
