@@ -17,7 +17,7 @@ services:
         scope: RUN_TIME
         value: production
       - key: NPM_CONFIG_LEGACY_PEER_DEPS
-        scope: BUILD_TIME
+        scope: RUN_AND_BUILD_TIME
         value: "true"
       - key: DB_URI
         scope: RUN_TIME
