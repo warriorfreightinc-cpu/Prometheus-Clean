@@ -65,11 +65,6 @@ import { RoutingModule } from "./routing/routing.module";
       }
     ]),
 
-    // ignat key
-    // StripeModule.forRoot({
-    //   apiKey: 'STRIPE_TEST_KEY_REMOVED',
-    //   apiVersion:'2022-08-01'
-    // }),
     StripeModule.forRoot({
       apiKey: process.env.STRIPE_API_KEY,
       apiVersion: null
