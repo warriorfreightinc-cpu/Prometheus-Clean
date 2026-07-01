@@ -217,13 +217,13 @@ export class DispatchIntakeService {
   private parseOrigin(input: string, role: WorkspaceRole): DispatchPlaceDraft | null {
     const patterns = role === 'carrier'
       ? [
-          /\b(?:in|out of|from)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
-          /\b(?:post|create|add|check)?\s*(?:\d+\s+)?(?:truck|trucks|driver|drivers|unit)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+          /\b(?:in|out of|from)\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
+          /\b(?:post|create|add|check)?\s*(?:\d+\s+)?(?:truck|trucks|driver|drivers|unit)\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
         ]
       : [
-          /\bfrom\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
-          /\bin\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
-          /\b(?:post|create|add)?\s*(?:\d+\s+)?(?:hazmat\s+)?(?:load|loads|shipment|shipments)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+          /\bfrom\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
+          /\bin\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
+          /\b(?:post|create|add)?\s*(?:\d+\s+)?(?:hazmat\s+)?(?:load|loads|shipment|shipments)\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
         ];
 
     for (const pattern of patterns) {
@@ -233,13 +233,13 @@ export class DispatchIntakeService {
       }
     }
 
-    const fallback = input.match(/\b([a-z .'-]+),\s*([a-z]{2})\b/i);
+    const fallback = input.match(/\b([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i);
     return fallback ? this.normalizePlace(fallback[1], fallback[2]) : null;
   }
 
   private parseDestination(input: string): DispatchPlaceDraft | null {
     const patterns = [
-      /\b(?:to|going to|headed to|deliver(?:y)? to|looking to go to)\s+([a-z .'-]+),\s*([a-z]{2})\b/i,
+      /\b(?:to|going to|headed to|deliver(?:y)? to|looking to go to)\s+([a-z .'-]+?)(?:,\s*|\s+)([a-z]{2})\b/i,
     ];
 
     for (const pattern of patterns) {

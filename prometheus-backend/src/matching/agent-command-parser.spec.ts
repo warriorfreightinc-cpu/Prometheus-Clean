@@ -10,6 +10,8 @@ describe("parseAgentCommand", () => {
       maxWeight: 44000,
       maxLength: null,
       capacity: "any",
+      hazmatMode: "hazmat",
+      rateRequested: false,
       limit: 20,
       showMore: false,
       mapRequested: false,
@@ -25,6 +27,8 @@ describe("parseAgentCommand", () => {
       maxWeight: null,
       maxLength: 30,
       capacity: "partial",
+      hazmatMode: "hazmat",
+      rateRequested: false,
       limit: 20,
       showMore: false,
       mapRequested: false,
@@ -75,6 +79,24 @@ describe("parseAgentCommand", () => {
       originState: "IL",
       destinationCity: "Memphis",
       destinationState: "TN",
+    });
+  });
+
+  it("parses rate questions for city-to-city lanes", () => {
+    expect(parseAgentCommand("how much is the load from chicago to memphis paying?")).toMatchObject({
+      intent: "search",
+      originCity: "Chicago",
+      originState: "",
+      destinationCity: "Memphis",
+      destinationState: "",
+      rateRequested: true,
+    });
+  });
+
+  it("parses non-hazmat availability searches", () => {
+    expect(parseAgentCommand("any load that are non hazmat?")).toMatchObject({
+      intent: "search",
+      hazmatMode: "nonHazmat",
     });
   });
 

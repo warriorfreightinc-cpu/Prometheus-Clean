@@ -113,8 +113,13 @@ export class AgentCommandService {
   private buildQuery(parsed: ParsedAgentCommand, user: any) {
     const query: any = {
       companyId: { $ne: String(user?.companyId ?? "") },
-      nonHazmat: { $ne: true },
     };
+
+    if (parsed.hazmatMode === "nonHazmat") {
+      query.nonHazmat = true;
+    } else {
+      query.nonHazmat = { $ne: true };
+    }
 
     if (parsed.originCity) {
       query["origin.place.city"] = new RegExp(`^${this.escapeRegex(parsed.originCity)}$`, "i");
@@ -166,6 +171,7 @@ export class AgentCommandService {
     label: "load" | "truck"
   ): string {
     const plural = results.length === 1 ? label : `${label}s`;
+    const freightType = this.freightTypeLabel(parsed);
     const origin = this.formatParsedPlace(parsed.originCity, parsed.originState);
     const destination = this.formatParsedPlace(parsed.destinationCity, parsed.destinationState);
     const lane = destination
@@ -186,7 +192,11 @@ export class AgentCommandService {
       const mapNote = parsed.mapRequested
         ? " I can still open the map view once a truck/load context is selected."
         : "";
-      return `I do not see matching hazmat ${label}s ${filters || "for that search"} yet.${mapNote}`;
+      return `I do not see matching ${freightType} ${label}s ${filters || "for that search"} yet.${mapNote}`;
+    }
+
+    if (parsed.rateRequested) {
+      return this.renderRateMessage(parsed, results, label, filters, freightType);
     }
 
     const lines = results.slice(0, 5).map((post, index) => {
@@ -203,7 +213,29 @@ export class AgentCommandService {
       ? "\nI can use these results for the map view so you can see the nearby clusters around the truck."
       : "";
 
-    return `I found ${results.length} hazmat ${plural} ${filters || "for that search"}.\n${lines.join("\n")}${more}${mapNote}`;
+    return `I found ${results.length} ${freightType} ${plural} ${filters || "for that search"}.\n${lines.join("\n")}${more}${mapNote}`;
+  }
+
+  private renderRateMessage(
+    parsed: ParsedAgentCommand,
+    results: any[],
+    label: "load" | "truck",
+    filters: string,
+    freightType: string
+  ): string {
+    const plural = results.length === 1 ? label : `${label}s`;
+    const lines = results.slice(0, 5).map((post, index) => {
+      const lane = this.formatLane(post);
+      const equipment = this.formatEquipment(post.equipment);
+      const weight = this.formatWeight(post.weight);
+      const rate = this.formatRate(post.rate) || "Rate not posted";
+      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""} | ${rate}`;
+    });
+    const more = results.length > lines.length
+      ? `\nI have ${results.length - lines.length} more in this first set. Say "show more" to keep going.`
+      : "";
+
+    return `Rate check for ${results.length} ${freightType} ${plural} ${filters || "for that search"}.\n${lines.join("\n")}${more}`;
   }
 
   private renderEquipmentAlternativeMessage(
@@ -214,6 +246,7 @@ export class AgentCommandService {
     const requested = parsed.equipmentCodes?.join("/") || "requested equipment";
     const alternatives = this.permissionAlternativeEquipment(parsed.equipmentCodes ?? []).join("/");
     const plural = results.length === 1 ? "alternative" : "alternatives";
+    const freightType = this.freightTypeLabel(parsed);
     const origin = this.formatParsedPlace(parsed.originCity, parsed.originState);
     const destination = this.formatParsedPlace(parsed.destinationCity, parsed.destinationState);
     const city = destination
@@ -228,7 +261,11 @@ export class AgentCommandService {
       return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}`;
     });
 
-    return `No exact ${requested} hazmat ${label}s out of ${city} right now. I found ${results.length} permission-based ${alternatives} ${plural}. I can ask the ${counterpart} if this equipment substitution can work.\n${lines.join("\n")}`;
+    return `No exact ${requested} ${freightType} ${label}s out of ${city} right now. I found ${results.length} permission-based ${alternatives} ${plural}. I can ask the ${counterpart} if this equipment substitution can work.\n${lines.join("\n")}`;
+  }
+
+  private freightTypeLabel(parsed: ParsedAgentCommand): string {
+    return parsed.hazmatMode === "nonHazmat" ? "non-hazmat" : "hazmat";
   }
 
   private formatLane(post: any): string {

@@ -13,6 +13,16 @@ describe('DispatchIntakeService', () => {
     expect(result.draft?.length).toBe(53);
   });
 
+  it('parses carrier post shorthand without commas between city and state', () => {
+    const result = service.parse('carrier', 'Post van 53 foot from chicago il to memphis, tn today');
+
+    expect(result.error).toBeNull();
+    expect(result.draft?.origin).toEqual({ city: 'Chicago', state: 'IL' });
+    expect(result.draft?.destination).toEqual({ city: 'Memphis', state: 'TN' });
+    expect(result.draft?.equipmentCodes).toEqual(['V']);
+    expect(result.draft?.length).toBe(53);
+  });
+
   it('turns pasted list rows into dispatch drafts and reports rows that need help', () => {
     const result = service.parseBatch(
       'broker',

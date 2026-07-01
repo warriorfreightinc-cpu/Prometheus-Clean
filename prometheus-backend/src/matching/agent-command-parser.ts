@@ -6,6 +6,8 @@ export interface ParsedAgentCommand {
   originState?: string;
   destinationCity?: string;
   destinationState?: string;
+  hazmatMode?: "hazmat" | "nonHazmat";
+  rateRequested?: boolean;
   maxAgeHours?: number | null;
   maxWeight?: number | null;
   maxLength?: number | null;
@@ -20,8 +22,9 @@ const BOOKING_COMMAND = /\b(book|ask about|ask|accept|reject)\s+(option|match)?\
 const AGE_PATTERN = /\b(?:last|past)\s+(\d{1,3})\s*(?:h|hr|hrs|hour|hours)\b/i;
 const WEIGHT_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*\$?\s*((?:\d{2,3},\d{3})|\d{4,6})\s*(?:lb|lbs|pounds)?\b/i;
 const LENGTH_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*(\d{1,2})\s*(?:ft|feet|foot)\b/i;
-const LOCATION_PATTERN = /\b(?:out of|around|near|in|from)\s+(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map)\b|$)/i;
-const FROM_LANE_PATTERN = /\bfrom\s+(.+?)\s*(?:->|-|\bto\b)\s*(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map|v\s*\d{2}|r\s*\d{2})\b|$)/i;
+const STOP_WORDS = "from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|hazmat|non[-\\s]?hazmat|loads?|trucks?|shipments?|partials?|partial|full|map|paying|pay|paid|rate|rates|price|quote|quoted|cost|today|tomorrow|tonight|v\\s*\\d{2}|r\\s*\\d{2}";
+const LOCATION_PATTERN = new RegExp(`\\b(?:out of|around|near|in|from)\\s+(.+?)(?=\\s+(?:${STOP_WORDS})\\b|$)`, "i");
+const FROM_LANE_PATTERN = new RegExp(`\\bfrom\\s+(.+?)\\s*(?:->|-|\\bto\\b)\\s*(.+?)(?=\\s+(?:${STOP_WORDS})\\b|$)`, "i");
 const STATE_LANE_PATTERN = /\b([A-Z]{2})\s*(?:->|-|\bto\b)\s*([A-Z]{2})\b/i;
 const IN_CITY_STATE_PATTERN = /\bin\s+([a-zA-Z .'-]+?)(?:,\s*|\s+)([A-Z]{2})\b/i;
 const STATE_PATTERN = /^(.+?)(?:,\s*|\s+)([A-Z]{2})$/i;
@@ -64,6 +67,8 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     ? "full"
     : "any";
   const equipmentCodes = parseEquipmentCodes(text);
+  const rateRequested = /\b(rate|rates|rpm|paying|pay|paid|price|quote|quoted|cost|how much)\b/i.test(text);
+  const hazmatMode = parseHazmatMode(text);
 
   return {
     intent: "search",
@@ -79,6 +84,8 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     maxWeight: weightMatch ? Number(weightMatch[1].replace(/,/g, "")) : null,
     maxLength: lengthMatch ? Number(lengthMatch[1]) : null,
     capacity,
+    hazmatMode,
+    rateRequested,
     ...(equipmentCodes.length ? { equipmentCodes } : {}),
     limit: 20,
     showMore: false,
@@ -122,6 +129,10 @@ function parseLaneParts(originRaw: string, destinationRaw: string) {
 
 function parsePlaceSegment(raw: string): { city: string; state: string } | null {
   const segment = cleanLocation(raw);
+  if (!segment) {
+    return null;
+  }
+
   const stateOnly = segment.toUpperCase();
   if (US_STATE_CODES.has(stateOnly)) {
     return { city: "", state: stateOnly };
@@ -135,7 +146,14 @@ function parsePlaceSegment(raw: string): { city: string; state: string } | null 
     };
   }
 
-  return null;
+  return { city: cleanCity(segment), state: "" };
+}
+
+function parseHazmatMode(text: string): "hazmat" | "nonHazmat" {
+  if (/\b(?:non[-\s]?hazmat|not\s+hazmat|no\s+hazmat)\b/i.test(text)) {
+    return "nonHazmat";
+  }
+  return "hazmat";
 }
 
 function parseEquipmentCodes(text: string): string[] {

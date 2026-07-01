@@ -1298,7 +1298,7 @@ export class WorkspaceComponent implements OnInit, AfterViewInit, OnDestroy {
 
     return this.isBroker
       ? /\b(load|loads|shipment|shipments|hazmat)\b/.test(normalized)
-      : /\b(truck|trucks|driver|drivers|unit|ready|empty|available)\b/.test(normalized);
+      : /\b(truck|trucks|driver|drivers|unit|ready|empty|available|van|reefer|flatbed|step\s*deck|power\s*only|tanker)\b/.test(normalized);
   }
 
   private shouldStagePromptAsImport(prompt: string): boolean {

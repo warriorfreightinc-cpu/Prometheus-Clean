@@ -125,6 +125,62 @@ describe("AgentCommandService", () => {
     expect(result.message).toContain("Chicago, IL to Memphis, TN");
   });
 
+  it("answers rate questions without treating paying as part of the destination", async () => {
+    chainFind(brokerPostModel, [
+      {
+        _id: "load-1",
+        origin: { place: { city: "Chicago", state: "IL" } },
+        destination: { place: { city: "Memphis", state: "TN" } },
+        equipment: ["V"],
+        weight: 42000,
+        length: 53,
+        capacity: "full",
+        publishedAt: new Date("2026-05-10T15:00:00.000Z"),
+      },
+      {
+        _id: "load-2",
+        origin: { place: { city: "Chicago", state: "IL" } },
+        destination: { place: { city: "Memphis", state: "TN" } },
+        equipment: ["V"],
+        weight: 41000,
+        length: 53,
+        capacity: "full",
+        rate: 2400,
+        publishedAt: new Date("2026-05-10T15:00:00.000Z"),
+      },
+    ]);
+
+    const result = await createService().handlePrompt(
+      "how much is the load from chicago to memphis paying?",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(brokerPostModel.find).toHaveBeenCalledWith(expect.objectContaining({
+      "origin.place.city": /^Chicago$/i,
+      "destination.place.city": /^Memphis$/i,
+    }));
+    expect(result.handled).toBe(true);
+    expect(result.message).toContain("Rate check for 2 hazmat loads out of Chicago to Memphis");
+    expect(result.message).toContain("Rate not posted");
+    expect(result.message).toContain("$2,400");
+  });
+
+  it("filters non-hazmat searches separately from hazmat searches", async () => {
+    chainFind(brokerPostModel, []);
+
+    const result = await createService().handlePrompt(
+      "any load that are non hazmat?",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(brokerPostModel.find).toHaveBeenCalledWith(expect.objectContaining({
+      nonHazmat: true,
+    }));
+    expect(result.handled).toBe(true);
+    expect(result.message).toContain("non-hazmat loads");
+    expect(result.message).toContain("I do not see matching non-hazmat loads");
+  });
+
   it("returns map guidance for map-style prompts", async () => {
     chainFind(brokerPostModel, []);
 
