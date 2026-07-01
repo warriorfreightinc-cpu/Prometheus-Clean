@@ -386,6 +386,7 @@ async function run() {
 
   const chicago = place("Chicago", "IL", 41.8781, -87.6298);
   const houston = place("Houston", "TX", 29.7604, -95.3698);
+  const memphis = place("Memphis", "TN", 35.1495, -90.0490);
   const desPlaines = place("Des Plaines", "IL", 42.0334, -87.8834);
   const pasadena = place("Pasadena", "TX", 29.6911, -95.2091);
   const joliet = place("Joliet", "IL", 41.5250, -88.0817);
@@ -395,6 +396,8 @@ async function run() {
   const deliveryOne = new Date(now.getTime() + 26 * 60 * 60 * 1000);
   const pickupTwo = new Date(now.getTime() + 5 * 60 * 60 * 1000);
   const deliveryTwo = new Date(now.getTime() + 30 * 60 * 60 * 1000);
+  const pickupThree = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const deliveryThree = new Date(now.getTime() + 20 * 60 * 60 * 1000);
 
   const brokerPostOne = await upsertBrokerPost(brokerPosts, "LB-CHI-HOU-001", {
     publisherId: brokerUser._id.toString(),
@@ -464,6 +467,40 @@ async function run() {
     stops: brokerStops(desPlaines, pasadena, pickupTwo, deliveryTwo),
   });
 
+  const brokerPostThree = await upsertBrokerPost(brokerPosts, "LB-CHI-MEM-003", {
+    publisherId: brokerUser._id.toString(),
+    companyId: brokerCompany._id.toString(),
+    length: 53,
+    weight: 41000,
+    equipment: ["V"],
+    capacity: "full",
+    capacitySearch: "both",
+    contact: "broker.local@prometheus.test",
+    company: brokerCompany.name,
+    origin: chicago,
+    destination: memphis,
+    distance: 540,
+    publishedAt: now,
+    comment: "IL to TN hazmat demo lane for broker/carrier assistant testing.",
+    bookUrl: "",
+    refNum: "LB-CHI-MEM-003",
+    tankerEndorsement: false,
+    nonHazmat: false,
+    team: false,
+    rate: 2400,
+    stopsDistances: [0, 540],
+    dhoRadius: 50,
+    dhdRadius: 50,
+    companyDot: brokerCompany.dot,
+    companyMc: brokerCompany.mc,
+    companyName: brokerCompany.name,
+    companyFirstName: brokerUser.firstName,
+    companyLastName: brokerUser.lastName,
+    companyEmail: brokerUser.email,
+    companyPhone: brokerUser.phone,
+    stops: brokerStops(chicago, memphis, pickupThree, deliveryThree),
+  });
+
   const carrierPostOne = await upsertCarrierPost(carrierPosts, "LC-CHI-HOU-001", {
     publisherId: carrierUser._id.toString(),
     companyId: carrierCompany._id.toString(),
@@ -511,6 +548,60 @@ async function run() {
     publishedAt: now,
     destination: dallas,
   });
+
+  const carrierPostThree = await upsertCarrierPost(carrierPosts, "LC-CHI-MEM-003", {
+    publisherId: carrierUser._id.toString(),
+    companyId: carrierCompany._id.toString(),
+    contact: "carrier.local@prometheus.test",
+    length: 53,
+    weight: 43000,
+    equipment: ["V"],
+    capacity: "full",
+    capacitySearch: "both",
+    startDate: now,
+    endDate: nextYear,
+    dhoRadius: 50,
+    dhdRadius: 50,
+    company: carrierCompany.name,
+    comment: "53' dry van hazmat ready for the IL to TN demo lane.",
+    refNum: "LC-CHI-MEM-003",
+    origin: chicago,
+    team: false,
+    nonTanker: true,
+    distance: 540,
+    publishedAt: now,
+    destination: memphis,
+  });
+
+  await upsertMessageRoom(
+    messages,
+    carrierPostThree._id.toString(),
+    brokerPostThree._id.toString(),
+    {
+      carrierPostId: carrierPostThree._id.toString(),
+      brokerPostId: brokerPostThree._id.toString(),
+      brokerId: brokerUser._id.toString(),
+      carrierId: carrierUser._id.toString(),
+      hiddenForBroker: false,
+      hiddenForCarrier: false,
+      createdBy: brokerUser._id.toString(),
+      seen: { brokerCount: 0, carrierCount: 0 },
+      bookingStatus: "open",
+      brokerApprovedBooking: false,
+      carrierApprovedBooking: false,
+      bookingStatusUpdatedAt: now,
+      bookingStatusUpdatedBy: brokerUser._id.toString(),
+      bookingNotes: "Seeded IL to TN lane for Niko-style assistant search testing.",
+      messages: [
+        {
+          text: "IL to TN demo lane is open for assistant testing.",
+          type: "message",
+          date: now,
+          role: "broker",
+        },
+      ],
+    }
+  );
 
   await upsertMessageRoom(
     messages,

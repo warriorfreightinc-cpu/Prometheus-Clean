@@ -96,6 +96,35 @@ describe("AgentCommandService", () => {
     expect(result.message).toContain("I found 1 hazmat truck");
   });
 
+  it("filters broker loads by state-to-state lane for carrier users", async () => {
+    chainFind(brokerPostModel, [
+      {
+        _id: "load-1",
+        origin: { place: { city: "Chicago", state: "IL" } },
+        destination: { place: { city: "Memphis", state: "TN" } },
+        equipment: ["V"],
+        weight: 42000,
+        length: 53,
+        capacity: "full",
+        rate: 2400,
+        publishedAt: new Date("2026-05-10T15:00:00.000Z"),
+      },
+    ]);
+
+    const result = await createService().handlePrompt(
+      "show loads from IL-TN",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(brokerPostModel.find).toHaveBeenCalledWith(expect.objectContaining({
+      "origin.place.state": /^IL$/i,
+      "destination.place.state": /^TN$/i,
+    }));
+    expect(result.handled).toBe(true);
+    expect(result.message).toContain("I found 1 hazmat load out of IL to TN");
+    expect(result.message).toContain("Chicago, IL to Memphis, TN");
+  });
+
   it("returns map guidance for map-style prompts", async () => {
     chainFind(brokerPostModel, []);
 

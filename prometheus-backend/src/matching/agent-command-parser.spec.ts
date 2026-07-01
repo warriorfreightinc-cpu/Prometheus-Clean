@@ -44,6 +44,40 @@ describe("parseAgentCommand", () => {
     });
   });
 
+  it("parses state-to-state lane searches", () => {
+    expect(parseAgentCommand("show loads from IL-TN")).toMatchObject({
+      intent: "search",
+      originCity: "",
+      originState: "IL",
+      destinationCity: "",
+      destinationState: "TN",
+    });
+    expect(parseAgentCommand("search available trucks from IL to TN")).toMatchObject({
+      intent: "search",
+      originCity: "",
+      originState: "IL",
+      destinationCity: "",
+      destinationState: "TN",
+    });
+    expect(parseAgentCommand("IL-TN")).toMatchObject({
+      intent: "search",
+      originCity: "",
+      originState: "IL",
+      destinationCity: "",
+      destinationState: "TN",
+    });
+  });
+
+  it("parses city-state lane searches", () => {
+    expect(parseAgentCommand("show loads from Chicago, IL to Memphis, TN")).toMatchObject({
+      intent: "search",
+      originCity: "Chicago",
+      originState: "IL",
+      destinationCity: "Memphis",
+      destinationState: "TN",
+    });
+  });
+
   it("parses map requests", () => {
     expect(parseAgentCommand("show me a map with loads around my truck in Houston TX")).toMatchObject({
       intent: "search",

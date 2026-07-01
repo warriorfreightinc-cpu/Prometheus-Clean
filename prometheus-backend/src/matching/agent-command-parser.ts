@@ -4,6 +4,8 @@ export interface ParsedAgentCommand {
   intent: AgentCommandIntent;
   originCity?: string;
   originState?: string;
+  destinationCity?: string;
+  destinationState?: string;
   maxAgeHours?: number | null;
   maxWeight?: number | null;
   maxLength?: number | null;
@@ -19,6 +21,8 @@ const AGE_PATTERN = /\b(?:last|past)\s+(\d{1,3})\s*(?:h|hr|hrs|hour|hours)\b/i;
 const WEIGHT_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*\$?\s*((?:\d{2,3},\d{3})|\d{4,6})\s*(?:lb|lbs|pounds)?\b/i;
 const LENGTH_PATTERN = /\b(?:under|below|less than|max(?:imum)?)\s*(\d{1,2})\s*(?:ft|feet|foot)\b/i;
 const LOCATION_PATTERN = /\b(?:out of|around|near|in|from)\s+(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|in|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map)\b|$)/i;
+const FROM_LANE_PATTERN = /\bfrom\s+(.+?)\s*(?:->|-|\bto\b)\s*(.+?)(?=\s+(?:from the|for the|last|past|under|below|less than|max|only|with|and|ready|posted|hazmat|loads?|trucks?|shipments?|partials?|partial|full|map|v\s*\d{2}|r\s*\d{2})\b|$)/i;
+const STATE_LANE_PATTERN = /\b([A-Z]{2})\s*(?:->|-|\bto\b)\s*([A-Z]{2})\b/i;
 const IN_CITY_STATE_PATTERN = /\bin\s+([a-zA-Z .'-]+?)(?:,\s*|\s+)([A-Z]{2})\b/i;
 const STATE_PATTERN = /^(.+?)(?:,\s*|\s+)([A-Z]{2})$/i;
 const US_STATE_CODES = new Set([
@@ -41,12 +45,16 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     return { intent: "showMore", showMore: true };
   }
 
-  const looksSearchLike = /\b(anything|loads?|trucks?|shipments?|partials?|map|around|out of|near|from)\b/i.test(text);
+  const lane = parseLane(text);
+  const looksSearchLike = Boolean(lane)
+    || /\b(anything|loads?|trucks?|shipments?|partials?|map|around|out of|near|from)\b/i.test(text);
   if (!looksSearchLike) {
     return { intent: "unknown" };
   }
 
-  const location = parseLocation(text);
+  const location = lane
+    ? { city: lane.originCity, state: lane.originState }
+    : parseLocation(text);
   const ageMatch = text.match(AGE_PATTERN);
   const weightMatch = text.match(WEIGHT_PATTERN);
   const lengthMatch = text.match(LENGTH_PATTERN);
@@ -61,6 +69,12 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     intent: "search",
     originCity: location.city,
     originState: location.state,
+    ...(lane
+      ? {
+          destinationCity: lane.destinationCity,
+          destinationState: lane.destinationState,
+        }
+      : {}),
     maxAgeHours: ageMatch ? Number(ageMatch[1]) : null,
     maxWeight: weightMatch ? Number(weightMatch[1].replace(/,/g, "")) : null,
     maxLength: lengthMatch ? Number(lengthMatch[1]) : null,
@@ -70,6 +84,58 @@ export function parseAgentCommand(prompt: string): ParsedAgentCommand {
     showMore: false,
     mapRequested: /\bmap|around\b/i.test(text),
   };
+}
+
+function parseLane(text: string): {
+  originCity: string;
+  originState: string;
+  destinationCity: string;
+  destinationState: string;
+} | null {
+  const fromMatch = text.match(FROM_LANE_PATTERN);
+  if (fromMatch) {
+    return parseLaneParts(fromMatch[1], fromMatch[2]);
+  }
+
+  const stateMatch = text.match(STATE_LANE_PATTERN);
+  if (stateMatch) {
+    return parseLaneParts(stateMatch[1], stateMatch[2]);
+  }
+
+  return null;
+}
+
+function parseLaneParts(originRaw: string, destinationRaw: string) {
+  const origin = parsePlaceSegment(originRaw);
+  const destination = parsePlaceSegment(destinationRaw);
+  if (!origin || !destination) {
+    return null;
+  }
+
+  return {
+    originCity: origin.city,
+    originState: origin.state,
+    destinationCity: destination.city,
+    destinationState: destination.state,
+  };
+}
+
+function parsePlaceSegment(raw: string): { city: string; state: string } | null {
+  const segment = cleanLocation(raw);
+  const stateOnly = segment.toUpperCase();
+  if (US_STATE_CODES.has(stateOnly)) {
+    return { city: "", state: stateOnly };
+  }
+
+  const stateMatch = segment.match(STATE_PATTERN);
+  if (stateMatch && US_STATE_CODES.has(stateMatch[2].toUpperCase())) {
+    return {
+      city: cleanCity(stateMatch[1]),
+      state: stateMatch[2].toUpperCase(),
+    };
+  }
+
+  return null;
 }
 
 function parseEquipmentCodes(text: string): string[] {

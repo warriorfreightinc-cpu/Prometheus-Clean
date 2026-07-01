@@ -122,6 +122,12 @@ export class AgentCommandService {
     if (parsed.originState) {
       query["origin.place.state"] = new RegExp(`^${this.escapeRegex(parsed.originState)}$`, "i");
     }
+    if (parsed.destinationCity) {
+      query["destination.place.city"] = new RegExp(`^${this.escapeRegex(parsed.destinationCity)}$`, "i");
+    }
+    if (parsed.destinationState) {
+      query["destination.place.state"] = new RegExp(`^${this.escapeRegex(parsed.destinationState)}$`, "i");
+    }
     if (parsed.maxAgeHours) {
       query.publishedAt = {
         $gte: new Date(Date.now() - parsed.maxAgeHours * 60 * 60 * 1000),
@@ -160,9 +166,15 @@ export class AgentCommandService {
     label: "load" | "truck"
   ): string {
     const plural = results.length === 1 ? label : `${label}s`;
-    const location = [parsed.originCity, parsed.originState].filter(Boolean).join(", ");
+    const origin = this.formatParsedPlace(parsed.originCity, parsed.originState);
+    const destination = this.formatParsedPlace(parsed.destinationCity, parsed.destinationState);
+    const lane = destination
+      ? `out of ${origin || "anywhere"} to ${destination}`
+      : origin
+      ? `out of ${origin}`
+      : "";
     const filters = [
-      location ? `out of ${location}` : "",
+      lane,
       parsed.maxAgeHours ? `from the last ${parsed.maxAgeHours} hours` : "",
       parsed.maxWeight ? `under ${parsed.maxWeight.toLocaleString()} lb` : "",
       parsed.maxLength ? `under ${parsed.maxLength} ft` : "",
@@ -202,7 +214,11 @@ export class AgentCommandService {
     const requested = parsed.equipmentCodes?.join("/") || "requested equipment";
     const alternatives = this.permissionAlternativeEquipment(parsed.equipmentCodes ?? []).join("/");
     const plural = results.length === 1 ? "alternative" : "alternatives";
-    const city = [parsed.originCity, parsed.originState].filter(Boolean).join(", ") || "that area";
+    const origin = this.formatParsedPlace(parsed.originCity, parsed.originState);
+    const destination = this.formatParsedPlace(parsed.destinationCity, parsed.destinationState);
+    const city = destination
+      ? `${origin || "anywhere"} to ${destination}`
+      : origin || "that area";
     const counterpart = label === "load" ? "broker" : "carrier";
     const lines = results.slice(0, 5).map((post, index) => {
       const lane = this.formatLane(post);
@@ -225,6 +241,13 @@ export class AgentCommandService {
     const city = String(place?.place?.city ?? "").trim();
     const state = String(place?.place?.state ?? "").trim();
     return [city, state].filter(Boolean).join(", ") || "Unknown";
+  }
+
+  private formatParsedPlace(city: any, state: any): string {
+    return [city, state]
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean)
+      .join(", ");
   }
 
   private formatEquipment(value: any): string {
