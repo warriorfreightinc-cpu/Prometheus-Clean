@@ -1,5 +1,6 @@
 import { HttpService } from "@nestjs/axios";
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, Sse } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Optional, Post, Query, Req, Sse, UnauthorizedException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { ApiExcludeController, ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import { InjectStripe } from "nestjs-stripe";
 import { Observable, firstValueFrom, map } from "rxjs";
@@ -11,6 +12,7 @@ import * as states from "../json/state-boundry.json";
 import * as cityData from "./scripts/data/cities.json";
 import { XMLParser } from "fast-xml-parser";
 import { PostBrokerService } from "./post-broker/post.service";
+import { timingSafeEqual } from "crypto";
 
 type LocalCityRecord = {
   city?: string;
@@ -43,7 +45,8 @@ export class AppController {
     @InjectStripe() private readonly stripeClient: Stripe,
     private service: AppService,
     private http: HttpService,
-    private postBrokerService: PostBrokerService
+    private postBrokerService: PostBrokerService,
+    @Optional() private readonly configService?: ConfigService
   ) { }
 
   @Get("health-check")
@@ -326,6 +329,22 @@ export class AppController {
   @Public()
   @Post("loadboardnetwork")
   async loadboardWebhook(@Req() req) {
+
+    const expectedToken = String(this.configService?.get<string>("LEGACY_LOADBOARD_WEBHOOK_TOKEN") ?? "").trim();
+    const authorization = String(req?.headers?.authorization ?? "");
+    const presentedToken = String(
+      authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+      ?? req?.headers?.["x-prometheus-connector-key"]
+      ?? ""
+    ).trim();
+    const expectedBuffer = Buffer.from(expectedToken);
+    const presentedBuffer = Buffer.from(presentedToken);
+    const validCredential = expectedBuffer.length > 0
+      && expectedBuffer.length === presentedBuffer.length
+      && timingSafeEqual(expectedBuffer, presentedBuffer);
+    if (!validCredential) {
+      throw new UnauthorizedException("Legacy loadboard connector credential is invalid.");
+    }
 
     const rawInput = req.body instanceof Buffer ? req.body.toString("utf8") : typeof req.body === "string" ? req.body : "";
     const raw = rawInput?.trim();

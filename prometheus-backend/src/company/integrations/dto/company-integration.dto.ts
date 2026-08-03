@@ -1,9 +1,10 @@
-export type CompanyIntegrationCategory = "setup" | "tracking" | "eld";
+export type CompanyWorkflowIntegrationCategory = "setup" | "tracking" | "eld";
+export type CompanyIntegrationCategory = CompanyWorkflowIntegrationCategory | "loadboard" | "tms" | "mailbox";
 export type CompanyIntegrationStatus = "not_connected" | "connected" | "needs_attention" | "disabled";
-export type ProviderCatalogCategory = "platform" | "setup" | "tracking" | "eld" | "loadboard" | "tms" | "storage";
+export type ProviderCatalogCategory = "platform" | "setup" | "tracking" | "eld" | "loadboard" | "tms" | "mailbox" | "storage";
 export type ProviderCatalogStatus = "ready" | "needs_credentials" | "requires_credentials" | "requires_contract" | "manual";
 export type ProviderCatalogFreeTier = "free" | "paid" | "contract" | "local";
-export type RoomIntegrationChoiceCategory = CompanyIntegrationCategory | "manual";
+export type RoomIntegrationChoiceCategory = CompanyWorkflowIntegrationCategory | "manual";
 export type RoomIntegrationChoiceSource = "broker" | "carrier" | "manual";
 export type RoomIntegrationExecutionStatus = "staged" | "unavailable";
 export type RoomIntegrationExecutionMode = "configured" | "placeholder" | "manual";

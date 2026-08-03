@@ -1,6 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
+import { ExternalOpportunitySearch } from "../external-connectors/dto/external-connector.dto";
+import { ExternalConnectorsService } from "../external-connectors/external-connectors.service";
 import { parseAgentCommand, ParsedAgentCommand } from "./agent-command-parser";
 
 export interface AgentCommandResult {
@@ -10,12 +12,18 @@ export interface AgentCommandResult {
   metadata?: Record<string, any>;
 }
 
+type AgentSearchTarget = {
+  label: "load" | "truck";
+  model: Model<any>;
+};
+
 @Injectable()
 export class AgentCommandService {
   constructor(
     @InjectModel("brokerPost") private readonly brokerPostModel: Model<any>,
     @InjectModel("carrierPost") private readonly carrierPostModel: Model<any>,
-    @InjectModel("Company") private readonly companyModel: Model<any>
+    @InjectModel("Company") private readonly companyModel: Model<any>,
+    @Optional() private readonly externalConnectors?: ExternalConnectorsService
   ) {}
 
   async handlePrompt(prompt: string, user: any): Promise<AgentCommandResult> {
@@ -42,20 +50,21 @@ export class AgentCommandService {
     }
 
     const query = this.buildQuery(parsed, user);
-    const results = await target.model
-      .find(query)
-      .sort({ publishedAt: -1, createdAt: -1 })
-      .limit(parsed.limit ?? 20)
-      .lean<any[]>();
+    const search = await this.searchTarget(target, query, parsed, user);
+    const results = search.results;
 
     if (!results.length && parsed.equipmentCodes?.length) {
       const alternativeQuery = this.buildEquipmentAlternativeQuery(query, parsed.equipmentCodes);
       if (alternativeQuery) {
-        const alternativeResults = await target.model
-          .find(alternativeQuery)
-          .sort({ publishedAt: -1, createdAt: -1 })
-          .limit(parsed.limit ?? 20)
-          .lean<any[]>();
+        const alternatives = this.permissionAlternativeEquipment(parsed.equipmentCodes);
+        const alternativeSearch = await this.searchTarget(
+          target,
+          alternativeQuery,
+          parsed,
+          user,
+          alternatives
+        );
+        const alternativeResults = alternativeSearch.results;
         if (alternativeResults.length) {
           return {
             handled: true,
@@ -66,6 +75,8 @@ export class AgentCommandService {
               resultCount: alternativeResults.length,
               exactResultCount: 0,
               alternativeEquipment: true,
+              internalResultCount: alternativeSearch.internalCount,
+              externalResultCount: alternativeSearch.externalCount,
               mapRequested: Boolean(parsed.mapRequested),
             },
           };
@@ -80,12 +91,14 @@ export class AgentCommandService {
         commandType: "search",
         targetType: target.label,
         resultCount: results.length,
+        internalResultCount: search.internalCount,
+        externalResultCount: search.externalCount,
         mapRequested: Boolean(parsed.mapRequested),
       },
     };
   }
 
-  private async targetForUser(user: any): Promise<{ label: "load" | "truck"; model: Model<any> } | null> {
+  private async targetForUser(user: any): Promise<AgentSearchTarget | null> {
     const directTarget = this.targetForRole(String(user?.role ?? ""));
     if (directTarget) {
       return directTarget;
@@ -100,7 +113,7 @@ export class AgentCommandService {
     return this.targetForRole(String(company?.type ?? ""));
   }
 
-  private targetForRole(role: string): { label: "load" | "truck"; model: Model<any> } | null {
+  private targetForRole(role: string): AgentSearchTarget | null {
     if (role === "carrier") {
       return { label: "load", model: this.brokerPostModel };
     }
@@ -108,6 +121,57 @@ export class AgentCommandService {
       return { label: "truck", model: this.carrierPostModel };
     }
     return null;
+  }
+
+  private async searchTarget(
+    target: AgentSearchTarget,
+    internalQuery: any,
+    parsed: ParsedAgentCommand,
+    user: any,
+    equipmentCodes = parsed.equipmentCodes
+  ): Promise<{ results: any[]; internalCount: number; externalCount: number }> {
+    const limit = parsed.limit ?? 20;
+    const internalPromise = target.model
+      .find(internalQuery)
+      .sort({ publishedAt: -1, createdAt: -1 })
+      .limit(limit)
+      .lean<any[]>();
+    const externalPromise = this.externalConnectors
+      ? this.externalConnectors
+          .searchForCompany(String(user?.companyId ?? ""), {
+            kind: target.label,
+            hazmatMode: parsed.hazmatMode === "nonHazmat" ? "nonHazmat" : "hazmat",
+            originCity: parsed.originCity,
+            originState: parsed.originState,
+            destinationCity: parsed.destinationCity,
+            destinationState: parsed.destinationState,
+            maxAgeHours: parsed.maxAgeHours,
+            maxWeight: parsed.maxWeight,
+            maxLength: parsed.maxLength,
+            capacity: parsed.capacity,
+            equipmentCodes,
+            limit,
+          } as ExternalOpportunitySearch)
+          .catch(() => [])
+      : Promise.resolve([]);
+
+    const [internalResults, externalResults] = await Promise.all([
+      internalPromise,
+      externalPromise,
+    ]);
+    const taggedExternal = externalResults.map((result) => ({
+      ...result,
+      _externalOpportunity: true,
+    }));
+    const results = [...internalResults, ...taggedExternal]
+      .sort((left, right) => this.resultTimestamp(right) - this.resultTimestamp(left))
+      .slice(0, limit);
+
+    return {
+      results,
+      internalCount: internalResults.length,
+      externalCount: externalResults.length,
+    };
   }
 
   private buildQuery(parsed: ParsedAgentCommand, user: any) {
@@ -199,12 +263,13 @@ export class AgentCommandService {
       return this.renderRateMessage(parsed, results, label, filters, freightType);
     }
 
-    const lines = results.slice(0, 5).map((post, index) => {
+    const lines = results.slice(0, 10).map((post, index) => {
       const lane = this.formatLane(post);
       const equipment = this.formatEquipment(post.equipment);
       const weight = this.formatWeight(post.weight);
       const rate = this.formatRate(post.rate);
-      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}`;
+      const source = this.formatSource(post);
+      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}${source}`;
     });
     const more = results.length > lines.length
       ? `\nI have ${results.length - lines.length} more in this first set. Say "show more" to keep going.`
@@ -224,12 +289,12 @@ export class AgentCommandService {
     freightType: string
   ): string {
     const plural = results.length === 1 ? label : `${label}s`;
-    const lines = results.slice(0, 5).map((post, index) => {
+    const lines = results.slice(0, 10).map((post, index) => {
       const lane = this.formatLane(post);
       const equipment = this.formatEquipment(post.equipment);
       const weight = this.formatWeight(post.weight);
       const rate = this.formatRate(post.rate) || "Rate not posted";
-      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""} | ${rate}`;
+      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""} | ${rate}${this.formatSource(post)}`;
     });
     const more = results.length > lines.length
       ? `\nI have ${results.length - lines.length} more in this first set. Say "show more" to keep going.`
@@ -253,12 +318,12 @@ export class AgentCommandService {
       ? `${origin || "anywhere"} to ${destination}`
       : origin || "that area";
     const counterpart = label === "load" ? "broker" : "carrier";
-    const lines = results.slice(0, 5).map((post, index) => {
+    const lines = results.slice(0, 10).map((post, index) => {
       const lane = this.formatLane(post);
       const equipment = this.formatEquipment(post.equipment);
       const weight = this.formatWeight(post.weight);
       const rate = this.formatRate(post.rate);
-      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}`;
+      return `${index + 1}. ${lane} | ${equipment}${weight ? ` | ${weight}` : ""}${rate ? ` | ${rate}` : ""}${this.formatSource(post)}`;
     });
 
     return `No exact ${requested} ${freightType} ${label}s out of ${city} right now. I found ${results.length} permission-based ${alternatives} ${plural}. I can ask the ${counterpart} if this equipment substitution can work.\n${lines.join("\n")}`;
@@ -300,6 +365,17 @@ export class AgentCommandService {
   private formatRate(value: any): string {
     const rate = Number(value);
     return Number.isFinite(rate) && rate > 0 ? `$${rate.toLocaleString()}` : "";
+  }
+
+  private formatSource(post: any): string {
+    const source = String(post?.providerLabel ?? post?.provider ?? "").trim();
+    return post?._externalOpportunity && source ? ` | Source: ${source}` : "";
+  }
+
+  private resultTimestamp(post: any): number {
+    const value = post?.sourceUpdatedAt ?? post?.publishedAt ?? post?.updatedAt ?? post?.createdAt;
+    const timestamp = new Date(value ?? 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
   }
 
   private capacityVariants(value: "full" | "partial") {

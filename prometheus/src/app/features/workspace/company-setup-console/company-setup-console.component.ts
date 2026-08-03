@@ -66,6 +66,21 @@ export class CompanySetupConsoleComponent implements OnInit {
       title: 'Carrier ELD/API',
       description: 'Carrier-side ELD or custom tracking feeds.',
     },
+    {
+      category: 'loadboard',
+      title: 'Load board APIs',
+      description: 'Private broker and marketplace load or truck feeds.',
+    },
+    {
+      category: 'tms',
+      title: 'TMS connections',
+      description: 'Company-owned load and equipment synchronization.',
+    },
+    {
+      category: 'mailbox',
+      title: 'Email connections',
+      description: 'Approved inbox search, replies, and load-list intake.',
+    },
   ];
 
   setupStatus: CompanySetupStatus | null = null;

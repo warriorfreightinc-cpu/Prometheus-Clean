@@ -7,6 +7,7 @@ import { PostCarrier } from "src/post-carrier/interface/post.interface";
 import { Company, CompanyIntegration } from "../interface/company.interface";
 import {
   CompanyIntegrationCategory,
+  CompanyWorkflowIntegrationCategory,
   ProviderCatalogDTO,
   ProviderCatalogItemDTO,
   CompanyIntegrationResponseDTO,
@@ -23,7 +24,7 @@ import {
 } from "./dto/company-integration.dto";
 
 type SandboxRoomProviderDefinition = {
-  category: CompanyIntegrationCategory;
+  category: CompanyWorkflowIntegrationCategory;
   provider: string;
   label: string;
   source: "broker" | "carrier";
@@ -72,7 +73,11 @@ export class CompanyIntegrationsService {
         this.companyProvider("eld", "geotab", "Geotab ELD", "requires_credentials", "paid", "Carrier ELD/GPS/HOS source. Requires MyGeotab API account."),
         this.companyProvider("loadboard", "dat", "DAT", "requires_contract", "contract", "Load/truck board and rates. Requires DAT developer/API access."),
         this.companyProvider("loadboard", "truckstop", "Truckstop load board", "requires_contract", "contract", "Truckstop load/truck search and booking tools. Requires API access."),
-        this.companyProvider("tms", "ch_robinson", "C.H. Robinson/Navisphere", "requires_contract", "contract", "Contracted carrier/broker load feed. Requires CH Robinson API connectivity.")
+        this.companyProvider("loadboard", "universal_api", "Universal broker API", "requires_credentials", "contract", "Provider-neutral load and truck feed. Each partner maps its API to the Prometheus connector contract."),
+        this.companyProvider("tms", "ch_robinson", "C.H. Robinson/Navisphere", "requires_contract", "contract", "Contracted carrier/broker load feed. Requires CH Robinson API connectivity."),
+        this.companyProvider("tms", "universal_tms", "Universal TMS connector", "requires_credentials", "contract", "Provider-neutral company load and truck synchronization through the Prometheus connector contract."),
+        this.companyProvider("mailbox", "gmail", "Google Workspace / Gmail", "requires_credentials", "free", "Company-approved mailbox search, sending, replies, and load-list intake through Google OAuth."),
+        this.companyProvider("mailbox", "microsoft_365", "Microsoft 365 / Outlook", "requires_credentials", "paid", "Company-approved mailbox search, sending, replies, and load-list intake through Microsoft Graph OAuth.")
       ]
     };
   }
@@ -250,7 +255,7 @@ export class CompanyIntegrationsService {
   }
 
   private assertValidUpsert(data: UpsertCompanyIntegrationDTO) {
-    if (!["setup", "tracking", "eld"].includes(data?.category)) {
+    if (!["setup", "tracking", "eld", "loadboard", "tms", "mailbox"].includes(data?.category)) {
       throw new BadRequestException("A valid integration category is required.");
     }
     if (!this.optionalTrim(data.provider)) {
@@ -366,7 +371,7 @@ export class CompanyIntegrationsService {
       : source === "broker"
         ? [{ company: brokerCompany, source: "broker" }]
         : [{ company: brokerCompany, source: "broker" }, { company: carrierCompany, source: "carrier" }];
-    const categoryCandidates: CompanyIntegrationCategory[] = category === "tracking"
+    const categoryCandidates: CompanyWorkflowIntegrationCategory[] = category === "tracking"
       ? ["tracking", "eld"]
       : category === "eld"
         ? ["eld"]
@@ -374,7 +379,7 @@ export class CompanyIntegrationsService {
 
     for (const candidate of companyCandidates) {
       const integration = this.integrationsFor(candidate.company).find((item) => (
-        categoryCandidates.includes(item.category)
+        categoryCandidates.includes(item.category as CompanyWorkflowIntegrationCategory)
         && this.normalizeProvider(item.provider) === provider
         && item.enabled !== false
         && item.status === "connected"
@@ -390,7 +395,7 @@ export class CompanyIntegrationsService {
       id: this.idOf(integration),
       companyId: integration.companyId,
       source,
-      category: integration.category,
+      category: integration.category as CompanyWorkflowIntegrationCategory,
       provider: integration.provider,
       label: this.withSourcePrefix(integration.label, sourceLabel),
       setupUrl: integration.setupUrl
@@ -426,7 +431,7 @@ export class CompanyIntegrationsService {
     ];
   }
 
-  private sandboxRoomChoices(category: CompanyIntegrationCategory): RoomIntegrationChoiceDTO[] {
+  private sandboxRoomChoices(category: CompanyWorkflowIntegrationCategory): RoomIntegrationChoiceDTO[] {
     if (!this.sandboxProvidersEnabled()) {
       return [];
     }
@@ -449,7 +454,7 @@ export class CompanyIntegrationsService {
       return null;
     }
     const normalizedProvider = this.normalizeProvider(provider);
-    const categoryCandidates: CompanyIntegrationCategory[] = category === "tracking"
+    const categoryCandidates: CompanyWorkflowIntegrationCategory[] = category === "tracking"
       ? ["tracking", "eld"]
       : category === "eld"
         ? ["eld"]

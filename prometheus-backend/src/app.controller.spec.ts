@@ -1,3 +1,4 @@
+import { UnauthorizedException } from "@nestjs/common";
 import { throwError } from "rxjs";
 import { AppController } from "./app.controller";
 
@@ -60,5 +61,16 @@ describe("AppController geocode", () => {
         state: "KY",
       })
     );
+  });
+
+  it("rejects the deprecated loadboard webhook without its connector secret", async () => {
+    const { controller } = createController();
+
+    await expect(
+      controller.loadboardWebhook({
+        headers: {},
+        body: Buffer.from("<LBNLoadPostings />"),
+      })
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

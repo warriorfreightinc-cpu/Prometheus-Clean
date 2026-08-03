@@ -8,6 +8,7 @@ import { PostBrokerSchema } from "src/post-broker/schema/post.schema";
 import { PostCarrierModule } from "src/post-carrier/post.module";
 import { PostCarrierSchema } from "src/post-carrier/schema/post.schema";
 import { RoutingModule } from "src/routing/routing.module";
+import { ExternalConnectorsModule } from "src/external-connectors/external-connectors.module";
 import { MatchingController } from "./matching.controller";
 import { AgentCommandService } from "./agent-command.service";
 import { MatchingAssistantService } from "./matching-assistant.service";
@@ -27,6 +28,7 @@ import { MatchingAssistantEventSchema } from "./schema/matching-assistant-event.
       { name: "carrierPost", schema: PostCarrierSchema },
     ]),
     RoutingModule,
+    ExternalConnectorsModule,
     MessagesModule,
     AppGatewayModule,
     forwardRef(() => PostBrokerModule),

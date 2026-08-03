@@ -24,6 +24,7 @@ import { MessagesModule } from "./messages/messages.module";
 import { PostBrokerModule } from "./post-broker/post.module";
 import { PostCarrierModule } from "./post-carrier/post.module";
 import { RoutingModule } from "./routing/routing.module";
+import { ExternalConnectorsModule } from "./external-connectors/external-connectors.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -58,6 +59,7 @@ import { RoutingModule } from "./routing/routing.module";
     MatchingModule,
     RoutingModule,
     BrainModule,
+    ExternalConnectorsModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,

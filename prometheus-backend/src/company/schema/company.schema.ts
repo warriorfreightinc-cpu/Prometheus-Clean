@@ -6,7 +6,7 @@ const CompanyIntegrationSchema = new mongoose.Schema(
     companyId: String,
     category: {
       type: String,
-      enum: ["setup", "tracking", "eld"],
+      enum: ["setup", "tracking", "eld", "loadboard", "tms", "mailbox"],
       required: true
     },
     provider: {

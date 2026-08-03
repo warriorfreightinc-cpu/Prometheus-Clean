@@ -244,6 +244,49 @@ describe("AgentCommandService", () => {
     expect(result.handled).toBe(true);
   });
 
+  it("merges company-authorized external loads into AI search results", async () => {
+    chainFind(brokerPostModel, []);
+    const externalConnectors: any = {
+      searchForCompany: jest.fn().mockResolvedValue([
+        {
+          _id: "external-load-1",
+          provider: "partner_api",
+          providerLabel: "Partner Load Board",
+          origin: { place: { city: "Chicago", state: "IL" } },
+          destination: { place: { city: "Memphis", state: "TN" } },
+          equipment: ["VZ"],
+          weight: 42000,
+          rate: 2600,
+          sourceUpdatedAt: new Date("2026-08-03T12:00:00.000Z"),
+        },
+      ]),
+    };
+    const service = new AgentCommandService(
+      brokerPostModel,
+      carrierPostModel,
+      companyModel,
+      externalConnectors
+    );
+
+    const result = await service.handlePrompt(
+      "show hazmat loads from IL-TN",
+      { _id: "carrier-user-1", companyId: "carrier-company-1", role: "carrier" }
+    );
+
+    expect(externalConnectors.searchForCompany).toHaveBeenCalledWith(
+      "carrier-company-1",
+      expect.objectContaining({
+        kind: "load",
+        hazmatMode: "hazmat",
+        originState: "IL",
+        destinationState: "TN",
+      })
+    );
+    expect(result.message).toContain("Chicago, IL to Memphis, TN");
+    expect(result.message).toContain("Source: Partner Load Board");
+    expect(result.metadata?.externalResultCount).toBe(1);
+  });
+
   it("returns guidance when admin company type cannot be resolved", async () => {
     const result = await createService().handlePrompt(
       "anything out of Memphis from the last 5 hours",
